@@ -43,7 +43,6 @@ from typing import List, Dict, Any, Optional
 # LangChain imports
 from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_community.tools.tavily_search import TavilySearchResults
 
@@ -821,33 +820,58 @@ You AUTOMATICALLY decide which tool to use based on the user's question. You hav
     try:
         llm = get_llm(max_tokens=2000, temperature=0.5)
         
-        # If tools available, use agent with autonomous routing
+        # If tools available, use LLM with tool binding
         if available_tools:
-            prompt_template = ChatPromptTemplate.from_messages([
-                ("system", system_prompt),
-                MessagesPlaceholder(variable_name="chat_history", optional=True),
-                ("human", "{input}"),
-                MessagesPlaceholder(variable_name="agent_scratchpad")
-            ])
-            
             try:
-                agent = create_tool_calling_agent(llm, available_tools, prompt_template)
-                executor = AgentExecutor(
-                    agent=agent, 
-                    tools=available_tools, 
-                    verbose=False, 
-                    max_iterations=5,
-                    handle_parsing_errors=True
-                )
-                result = executor.invoke({"input": prompt, "chat_history": history_messages})
+                # Use LLM with bind_tools for tool calling
+                llm_with_tools = llm.bind_tools(available_tools)
+                response = llm_with_tools.invoke([
+                    SystemMessage(content=system_prompt),
+                    *history_messages,
+                    HumanMessage(content=prompt)
+                ])
                 
-                # Determine which agent was used for display
-                output = result.get("output", "No response generated.")
-                agent_used = detect_agent_used(result)
-                
-                return output, agent_used, [{"auto_routed": True}]
+                # Check if tools were called
+                if hasattr(response, 'tool_calls') and response.tool_calls:
+                    # Execute the first tool call
+                    tool_call = response.tool_calls[0]
+                    tool_name = tool_call.get('name', '')
+                    tool_args = tool_call.get('args', {})
+                    
+                    # Find and execute the tool
+                    for tool in available_tools:
+                        if tool.name == tool_name:
+                            tool_result = tool.invoke(tool_args)
+                            
+                            # Generate final response based on tool output
+                            final_response = llm.invoke([
+                                SystemMessage(content=system_prompt),
+                                HumanMessage(content=f"Tool '{tool_name}' returned:\n{tool_result}\n\nBased on this, answer the user's question: {prompt}")
+                            ])
+                            
+                            # Determine agent type from tool name
+                            if "pdf" in tool_name.lower():
+                                agent_used = "pdf_qa"
+                            elif "web" in tool_name.lower() or "search" in tool_name.lower():
+                                agent_used = "web_search"
+                            elif "blog" in tool_name.lower():
+                                agent_used = "blog_qa"
+                            elif "sentiment" in tool_name.lower():
+                                agent_used = "sentiment"
+                            elif "weather" in tool_name.lower():
+                                agent_used = "weather"
+                            else:
+                                agent_used = "orchestrator"
+                            
+                            return final_response.content, agent_used, [{"auto_routed": True}]
+                    
+                    # Tool not found, return direct response
+                    return response.content, "orchestrator", [{"fallback": True}]
+                else:
+                    # No tool calls, return direct response
+                    return response.content, "orchestrator", []
             except Exception as agent_error:
-                # Fallback to direct LLM if agent fails
+                # Fallback to direct LLM if tool calling fails
                 response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=prompt)])
                 return response.content, "orchestrator", [{"fallback": True}]
         else:
