@@ -49,41 +49,6 @@ from langchain_community.tools.tavily_search import TavilySearchResults
 
 filterwarnings("ignore")
 
-# ═══════════════════════════════════════════════
-# API CREDENTIALS HELPER
-# ═══════════════════════════════════════════════
-
-def parse_env_file(content: str) -> dict:
-    """Parse .env file content and extract credentials."""
-    credentials = {}
-    for line in content.split('\n'):
-        line = line.strip()
-        if line and not line.startswith('#') and '=' in line:
-            key, value = line.split('=', 1)
-            key = key.strip()
-            value = value.strip().strip('"').strip("'")
-            credentials[key] = value
-    
-    # Map to our expected keys
-    result = {
-        "azure_endpoint": credentials.get("AZURE_ENDPOINT", ""),
-        "azure_api_key": credentials.get("AZURE_OPENAI_API_KEY", ""),
-        "model_deployment": credentials.get("CHAT_MODEL_NAME", "gpt-4o").strip('"'),
-        "api_version": credentials.get("api_version", "2024-12-01-preview").strip('"'),
-        "tavily_key": credentials.get("TAVILY_API_KEY", ""),
-        "weather_key": credentials.get("WEATHER_API_KEY", "")
-    }
-    
-    # If AZURE_ENDPOINT not found, try to extract from MODEL_ENDPOINT
-    if not result["azure_endpoint"] and credentials.get("MODEL_ENDPOINT"):
-        endpoint = credentials["MODEL_ENDPOINT"]
-        if "/openai" in endpoint:
-            result["azure_endpoint"] = endpoint.split("/openai")[0] + "/"
-        else:
-            result["azure_endpoint"] = endpoint
-    
-    return result
-
 st.set_page_config(
     page_title="AI Agent Hub",
     page_icon="🤖",
@@ -1495,51 +1460,28 @@ def render_sidebar():
         
         st.markdown('<hr class="sd">', unsafe_allow_html=True)
         
-        # API Configuration via .env file upload
-        api_configured = bool(st.session_state.get("azure_endpoint") and st.session_state.get("azure_api_key"))
-        config_label = "🔑 API Config ✓" if api_configured else "🔑 Upload API Config"
-        
-        with st.expander(config_label, expanded=not api_configured):
-            if api_configured:
-                st.markdown("<p style='font-size:0.75rem;color:var(--accent);margin-bottom:0.5rem;'>✓ Credentials loaded from your .env file</p>", unsafe_allow_html=True)
-                st.markdown(f"<p style='font-size:0.7rem;color:var(--text-300);'>Endpoint: {st.session_state.get('azure_endpoint', '')[:40]}...</p>", unsafe_allow_html=True)
-                if st.button("🔄 Upload New Config", use_container_width=True, key="reset_config"):
-                    for key in ["azure_endpoint", "azure_api_key", "model_deployment", "tavily_key", "weather_key", "env_file_loaded"]:
-                        st.session_state.pop(key, None)
-                    st.rerun()
-            else:
-                st.markdown("""
-                <p style='font-size:0.8rem;color:var(--text-200);margin-bottom:0.8rem;'>
-                    📄 Upload your <code>DENTSU_AZURE.env</code> file to configure API credentials.
-                </p>
-                """, unsafe_allow_html=True)
-                
-                uploaded_env = st.file_uploader("Upload .env file", type=["env", "txt"], key="env_uploader", label_visibility="collapsed")
-                
-                if uploaded_env:
-                    try:
-                        content = uploaded_env.read().decode("utf-8")
-                        credentials = parse_env_file(content)
-                        
-                        if credentials.get("azure_endpoint") and credentials.get("azure_api_key"):
-                            # Save to session state
-                            for key, value in credentials.items():
-                                st.session_state[key] = value
-                            st.session_state["api_version"] = "2024-12-01-preview"
-                            st.session_state["env_file_loaded"] = True
-                            st.success("✓ Credentials loaded!")
-                            st.rerun()
-                        else:
-                            st.error("Missing AZURE_ENDPOINT or AZURE_OPENAI_API_KEY in file")
-                    except Exception as e:
-                        st.error(f"Error reading file: {e}")
-                
-                st.markdown("""
-                <p style='font-size:0.68rem;color:var(--text-400);margin-top:0.5rem;'>
-                    Required keys: AZURE_ENDPOINT, AZURE_OPENAI_API_KEY<br>
-                    Optional: TAVILY_API_KEY, WEATHER_API_KEY
-                </p>
-                """, unsafe_allow_html=True)
+        # API Configuration
+        with st.expander("🔑 API Configuration", expanded=not st.session_state.get("azure_endpoint")):
+            ep = st.text_input("Azure Endpoint", value=st.session_state.get("azure_endpoint", ""),
+                              placeholder="https://your-resource.openai.azure.com/", key="ep_input")
+            ak = st.text_input("Azure API Key", value=st.session_state.get("azure_api_key", ""),
+                              placeholder="Enter API key", key="ak_input", type="password")
+            model = st.text_input("Model Deployment", value=st.session_state.get("model_deployment", "gpt-4o"),
+                                 placeholder="gpt-4o", key="model_input")
+            tavily = st.text_input("Tavily API Key (for web search)", value=st.session_state.get("tavily_key", ""),
+                                  placeholder="tvly-...", key="tavily_input", type="password")
+            weather = st.text_input("Weather API Key (weatherapi.com)", value=st.session_state.get("weather_key", ""),
+                                   placeholder="Enter weather API key", key="weather_input", type="password")
+            
+            if st.button("Save Configuration", use_container_width=True, key="save_config"):
+                if ep.strip() and ak.strip():
+                    st.session_state["azure_endpoint"] = ep.strip()
+                    st.session_state["azure_api_key"] = ak.strip()
+                    st.session_state["model_deployment"] = model.strip() or "gpt-4o"
+                    st.session_state["tavily_key"] = tavily.strip()
+                    st.session_state["weather_key"] = weather.strip()
+                    st.success("Configuration saved!"); st.rerun()
+                else: st.warning("Endpoint and API Key required.")
         
         st.markdown('<hr class="sd">', unsafe_allow_html=True)
         st.markdown("<p style='font-size:0.72rem;font-weight:700;color:var(--text-400);letter-spacing:0.1em;text-transform:uppercase;'>📂 Pages</p>", unsafe_allow_html=True)
@@ -1550,13 +1492,11 @@ def render_sidebar():
             btn_type = "primary" if is_active else "secondary"
             if st.button(f"{page_info['icon']} {page_info['short']}", key=f"page_{page_id}",
                         use_container_width=True, type=btn_type):
-                # Only rerun if actually changing to a different page
-                if page_id != current_page:
-                    st.session_state["current_page"] = page_id
-                    # Each page has its own message history
-                    if f"messages_{page_id}" not in st.session_state:
-                        st.session_state[f"messages_{page_id}"] = []
-                    st.rerun()
+                st.session_state["current_page"] = page_id
+                # Each page has its own message history
+                if f"messages_{page_id}" not in st.session_state:
+                    st.session_state[f"messages_{page_id}"] = []
+                st.rerun()
         
         st.markdown('<hr class="sd">', unsafe_allow_html=True)
         
@@ -1601,18 +1541,15 @@ def render_sidebar():
         if st.button("Add Blog", key="add_blog_btn", use_container_width=True):
             if blog_url and blog_url.startswith("http"):
                 existing = [b["url"] for b in get_user_blogs(user["user_id"])]
-                last_added = st.session_state.get("last_added_blog", "")
-                if blog_url not in existing and blog_url != last_added:
+                if blog_url not in existing:
                     with st.spinner("Loading blog..."):
                         title, content = load_blog_content(blog_url)
                         if not content.startswith("["):
                             save_blog(user["user_id"], blog_url, title, content)
-                            st.session_state["last_added_blog"] = blog_url
-                            st.success(f"✓ Added: {title[:30]}")
+                            st.success(f"✓ Added")
+                            st.rerun()
                         else:
                             st.error(content)
-                elif blog_url in existing:
-                    st.info("Blog already added")
         
         # Show added blogs
         blogs = get_user_blogs(user["user_id"])
@@ -1687,10 +1624,9 @@ def render_sidebar():
         
         # New Chat (clears current page's messages)
         if st.button("＋ New Chat", use_container_width=True):
-            current_pg = st.session_state.get("current_page", "home")
-            if st.session_state.get(f"messages_{current_pg}"):  # Only rerun if there are messages to clear
-                st.session_state[f"messages_{current_pg}"] = []
-                st.rerun()
+            current_page = st.session_state.get("current_page", "home")
+            st.session_state[f"messages_{current_page}"] = []
+            st.rerun()
         
         st.markdown('<hr class="sd">', unsafe_allow_html=True)
         
@@ -1710,12 +1646,9 @@ def render_chat():
     if not st.session_state.get("azure_endpoint") or not st.session_state.get("azure_api_key"):
         st.markdown("""
         <div class="welcome-area">
-            <div class="w-icon">�</div>
-            <h2>Upload Your API Config File</h2>
-            <p>Open <b>🔑 Upload API Config</b> in the sidebar and upload your <code>DENTSU_AZURE.env</code> file to get started.</p>
-            <p style="margin-top:1rem;font-size:0.8rem;color:var(--text-300);">
-                The file should contain your Azure OpenAI credentials, Tavily key, and Weather API key.
-            </p>
+            <div class="w-icon">🔑</div>
+            <h2>Configure API Credentials</h2>
+            <p>Open <b>🔑 API Configuration</b> in the sidebar to add your Azure OpenAI endpoint and API key.</p>
         </div>""", unsafe_allow_html=True)
         return
     
@@ -1875,18 +1808,15 @@ def render_chat():
                     if chart_source and chart_source.get("chart"):
                         st.image(f"data:image/png;base64,{chart_source['chart']}", use_container_width=True)
     
-    # Auto-execute pending query after redirect (check BEFORE setting new redirect)
-    pending_query = st.session_state.pop("pending_query", None)
-    
     # Check for pending web search redirect
     if st.session_state.get("redirect_to_web_search"):
-        redirect_query = st.session_state.pop("redirect_to_web_search")
-        if current_page != "web":  # Only redirect if not already on web page
-            st.session_state["current_page"] = "web"
-            st.session_state["pending_query"] = redirect_query
-            st.rerun()
-        else:
-            pending_query = redirect_query  # Already on web page, just use the query
+        pending_query = st.session_state.pop("redirect_to_web_search")
+        st.session_state["current_page"] = "web"
+        st.session_state["pending_query"] = pending_query
+        st.rerun()
+    
+    # Auto-execute pending query after redirect
+    pending_query = st.session_state.pop("pending_query", None)
     
     # Chat input
     placeholder = get_page_placeholder(current_page)
@@ -1906,32 +1836,25 @@ def render_chat():
             spinner_text = "Routing to best agent..." if current_page == "home" else f"{agent_info['name']} is thinking..."
             with st.spinner(spinner_text):
                 out_of_scope = False
-                sources = []
-                agent_used = current_agent
                 
-                try:
-                    if current_page == "home":  # Multi-agent orchestrator
-                        response, agent_used, sources = run_orchestrator(prompt, user, messages)
-                    elif current_agent == "pdf_qa":
-                        response, agent_used, sources, out_of_scope = run_pdf_retriever(prompt, user, messages)
-                    elif current_agent == "web_search":
-                        response, agent_used, sources, out_of_scope = run_web_search(prompt, user, messages)
-                    elif current_agent == "blog_qa":
-                        response, agent_used, sources, out_of_scope = run_blog_analyzer(prompt, user, messages)
-                    elif current_agent == "sentiment":
-                        response, agent_used, sources, out_of_scope = run_sentiment_analyzer(prompt, user, messages)
-                    elif current_agent == "weather":
-                        response, agent_used, sources, out_of_scope = run_weather_agent(prompt, user, messages)
-                    elif current_agent == "image_qa":
-                        response, agent_used, sources, out_of_scope = run_image_analyzer(prompt, user, messages)
-                    elif current_agent == "data_analysis":
-                        response, agent_used, sources, out_of_scope = run_data_analyzer(prompt, user, messages)
-                    else:
-                        response, agent_used, sources = run_orchestrator(prompt, user)
-                except Exception as e:
-                    response = f"⚠️ **Error processing your request:**\n\n`{str(e)}`\n\nPlease check your API configuration in the sidebar."
-                    agent_used = current_agent
-                    sources = []
+                if current_page == "home":  # Multi-agent orchestrator
+                    response, agent_used, sources = run_orchestrator(prompt, user, messages)
+                elif current_agent == "pdf_qa":
+                    response, agent_used, sources, out_of_scope = run_pdf_retriever(prompt, user, messages)
+                elif current_agent == "web_search":
+                    response, agent_used, sources, out_of_scope = run_web_search(prompt, user, messages)
+                elif current_agent == "blog_qa":
+                    response, agent_used, sources, out_of_scope = run_blog_analyzer(prompt, user, messages)
+                elif current_agent == "sentiment":
+                    response, agent_used, sources, out_of_scope = run_sentiment_analyzer(prompt, user, messages)
+                elif current_agent == "weather":
+                    response, agent_used, sources, out_of_scope = run_weather_agent(prompt, user, messages)
+                elif current_agent == "image_qa":
+                    response, agent_used, sources, out_of_scope = run_image_analyzer(prompt, user, messages)
+                elif current_agent == "data_analysis":
+                    response, agent_used, sources, out_of_scope = run_data_analyzer(prompt, user, messages)
+                else:
+                    response, agent_used, sources = run_orchestrator(prompt, user)
             
             # Show agent badge for home page (always show which agent was used)
             if current_page == "home":
