@@ -1520,122 +1520,6 @@ def render_sidebar():
         
         st.markdown('<hr class="sd">', unsafe_allow_html=True)
         
-        # PDF Upload
-        st.markdown("<p style='font-size:0.72rem;font-weight:700;color:var(--text-400);letter-spacing:0.1em;text-transform:uppercase;'>📄 PDF Documents</p>", unsafe_allow_html=True)
-        
-        uploaded_pdf = st.file_uploader("Upload PDF", type=["pdf"], key="pdf_uploader", label_visibility="collapsed")
-        if uploaded_pdf:
-            with st.spinner("Processing PDF..."):
-                content = extract_pdf(uploaded_pdf)
-                if not content.startswith("["):
-                    save_document(user["user_id"], uploaded_pdf.name, "pdf", content)
-                    st.success(f"Uploaded: {uploaded_pdf.name}")
-                    st.rerun()
-                else:
-                    st.error(content)
-        
-        # Show uploaded docs
-        docs = get_user_documents(user["user_id"])
-        for doc in docs[:5]:
-            cols = st.columns([5, 1])
-            with cols[0]:
-                st.markdown(f'<div class="doc-item"><span class="di">📄</span>{doc["filename"][:25]}</div>', unsafe_allow_html=True)
-            with cols[1]:
-                if st.button("×", key=f"del_doc_{doc['id']}"):
-                    delete_document(doc["id"], user["user_id"])
-                    st.rerun()
-        
-        st.markdown('<hr class="sd">', unsafe_allow_html=True)
-        
-        # Blog URL Input
-        st.markdown("<p style='font-size:0.72rem;font-weight:700;color:var(--text-400);letter-spacing:0.1em;text-transform:uppercase;'>📝 Blog Articles</p>", unsafe_allow_html=True)
-        
-        blog_url = st.text_input("Paste blog URL", placeholder="https://example.com/blog-post", key="blog_url", label_visibility="collapsed")
-        if blog_url and blog_url.startswith("http"):
-            existing = [b["url"] for b in get_user_blogs(user["user_id"])]
-            if blog_url not in existing:
-                with st.spinner("Loading blog..."):
-                    title, content = load_blog_content(blog_url)
-                    if not content.startswith("["):
-                        save_blog(user["user_id"], blog_url, title, content)
-                        st.success(f"Added: {title[:30]}...")
-                        st.rerun()
-                    else:
-                        st.error(content)
-        
-        # Show added blogs
-        blogs = get_user_blogs(user["user_id"])
-        for blog in blogs[:5]:
-            cols = st.columns([5, 1])
-            with cols[0]:
-                st.markdown(f'<div class="doc-item"><span class="di">📝</span>{(blog["title"] or "Blog")[:25]}</div>', unsafe_allow_html=True)
-            with cols[1]:
-                if st.button("×", key=f"del_blog_{blog['id']}"):
-                    delete_blog(blog["id"], user["user_id"])
-                    st.rerun()
-        
-        st.markdown('<hr class="sd">', unsafe_allow_html=True)
-        
-        # Image Upload
-        st.markdown("<p style='font-size:0.72rem;font-weight:700;color:var(--text-400);letter-spacing:0.1em;text-transform:uppercase;'>🖼️ Image Analysis</p>", unsafe_allow_html=True)
-        
-        uploaded_image = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg", "gif", "webp"], key="image_uploader", label_visibility="collapsed")
-        if uploaded_image:
-            # Convert to base64 for GPT-4o vision
-            import base64
-            uploaded_image.seek(0)
-            image_bytes = uploaded_image.read()
-            image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-            st.session_state["uploaded_image_data"] = image_b64
-            st.session_state["uploaded_image_name"] = uploaded_image.name
-            st.success(f"Image loaded: {uploaded_image.name}")
-        
-        # Show current image
-        if st.session_state.get("uploaded_image_data"):
-            img_name = st.session_state.get("uploaded_image_name", "image")
-            cols = st.columns([5, 1])
-            with cols[0]:
-                st.markdown(f'<div class="doc-item"><span class="di">🖼️</span>{img_name[:25]}</div>', unsafe_allow_html=True)
-            with cols[1]:
-                if st.button("×", key="del_image"):
-                    st.session_state.pop("uploaded_image_data", None)
-                    st.session_state.pop("uploaded_image_name", None)
-                    st.rerun()
-        
-        st.markdown('<hr class="sd">', unsafe_allow_html=True)
-        
-        # CSV Upload for Data Analysis
-        st.markdown("<p style='font-size:0.72rem;font-weight:700;color:var(--text-400);letter-spacing:0.1em;text-transform:uppercase;'>📊 Data Analysis</p>", unsafe_allow_html=True)
-        
-        uploaded_csv = st.file_uploader("Upload CSV", type=["csv"], key="csv_uploader", label_visibility="collapsed")
-        if uploaded_csv:
-            try:
-                uploaded_csv.seek(0)
-                csv_content = uploaded_csv.read().decode("utf-8")
-                st.session_state["uploaded_csv_data"] = csv_content
-                st.session_state["uploaded_csv_name"] = uploaded_csv.name
-                # Quick preview
-                import pandas as pd
-                df_preview = pd.read_csv(io.StringIO(csv_content))
-                st.success(f"Loaded: {uploaded_csv.name} ({len(df_preview):,} rows, {len(df_preview.columns)} cols)")
-            except Exception as e:
-                st.error(f"Error loading CSV: {e}")
-        
-        # Show current CSV
-        if st.session_state.get("uploaded_csv_data"):
-            csv_name = st.session_state.get("uploaded_csv_name", "data.csv")
-            cols = st.columns([5, 1])
-            with cols[0]:
-                st.markdown(f'<div class="doc-item"><span class="di">📊</span>{csv_name[:25]}</div>', unsafe_allow_html=True)
-            with cols[1]:
-                if st.button("×", key="del_csv"):
-                    st.session_state.pop("uploaded_csv_data", None)
-                    st.session_state.pop("uploaded_csv_name", None)
-                    st.session_state.pop("last_chart", None)
-                    st.rerun()
-        
-        st.markdown('<hr class="sd">', unsafe_allow_html=True)
-        
         # New Chat (clears current page's messages)
         if st.button("＋ New Chat", use_container_width=True):
             current_page = st.session_state.get("current_page", "home")
@@ -1686,6 +1570,145 @@ def render_chat():
         <span style="font-size:0.75rem;color:var(--text-400);margin-left:0.5rem;">{page_info['desc']}</span>
     </div>""", unsafe_allow_html=True)
     
+    # ═══════════════════════════════════════════════
+    # PAGE-SPECIFIC UPLOAD SECTIONS
+    # ═══════════════════════════════════════════════
+    
+    # PDF Page - Upload PDFs here
+    if current_page == "pdf":
+        with st.expander("📄 Upload & Manage PDFs", expanded=not get_user_documents(user["user_id"])):
+            uploaded_pdf = st.file_uploader("Upload PDF documents", type=["pdf"], key="pdf_uploader", accept_multiple_files=True)
+            if uploaded_pdf:
+                for pdf_file in uploaded_pdf:
+                    with st.spinner(f"Processing {pdf_file.name}..."):
+                        content = extract_pdf(pdf_file)
+                        if not content.startswith("["):
+                            save_document(user["user_id"], pdf_file.name, "pdf", content)
+                            st.success(f"✓ Uploaded: {pdf_file.name}")
+                        else:
+                            st.error(f"Error with {pdf_file.name}: {content}")
+                st.rerun()
+            
+            # Show uploaded docs
+            docs = get_user_documents(user["user_id"])
+            if docs:
+                st.markdown("**Uploaded Documents:**")
+                for doc in docs:
+                    cols = st.columns([6, 1])
+                    with cols[0]:
+                        st.markdown(f"📄 {doc['filename']}")
+                    with cols[1]:
+                        if st.button("🗑️", key=f"del_doc_{doc['id']}", help="Delete"):
+                            delete_document(doc["id"], user["user_id"])
+                            st.rerun()
+            else:
+                st.info("👆 Upload PDF documents to start asking questions about them.")
+    
+    # Blog Page - Add blog URLs here
+    elif current_page == "blog":
+        with st.expander("📝 Add & Manage Blog Articles", expanded=not get_user_blogs(user["user_id"])):
+            blog_url = st.text_input("Paste blog URL", placeholder="https://example.com/blog-post", key="blog_url_input")
+            if st.button("Add Blog", key="add_blog_btn", use_container_width=True):
+                if blog_url and blog_url.startswith("http"):
+                    existing = [b["url"] for b in get_user_blogs(user["user_id"])]
+                    if blog_url not in existing:
+                        with st.spinner("Loading blog content..."):
+                            title, content = load_blog_content(blog_url)
+                            if not content.startswith("["):
+                                save_blog(user["user_id"], blog_url, title, content)
+                                st.success(f"✓ Added: {title[:40]}...")
+                                st.rerun()
+                            else:
+                                st.error(content)
+                    else:
+                        st.warning("This blog is already added.")
+                else:
+                    st.warning("Please enter a valid URL starting with http:// or https://")
+            
+            # Show added blogs
+            blogs = get_user_blogs(user["user_id"])
+            if blogs:
+                st.markdown("**Added Blog Articles:**")
+                for blog in blogs:
+                    cols = st.columns([6, 1])
+                    with cols[0]:
+                        st.markdown(f"📝 [{blog['title'] or 'Blog'}]({blog['url']})")
+                    with cols[1]:
+                        if st.button("🗑️", key=f"del_blog_{blog['id']}", help="Delete"):
+                            delete_blog(blog["id"], user["user_id"])
+                            st.rerun()
+            else:
+                st.info("👆 Add blog article URLs to start analyzing them.")
+    
+    # Image Page - Upload images here
+    elif current_page == "image":
+        with st.expander("🖼️ Upload Image", expanded=not st.session_state.get("uploaded_image_data")):
+            uploaded_image = st.file_uploader("Upload an image to analyze", type=["png", "jpg", "jpeg", "gif", "webp"], key="image_uploader")
+            if uploaded_image:
+                import base64
+                uploaded_image.seek(0)
+                image_bytes = uploaded_image.read()
+                image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+                st.session_state["uploaded_image_data"] = image_b64
+                st.session_state["uploaded_image_name"] = uploaded_image.name
+                st.success(f"✓ Image loaded: {uploaded_image.name}")
+                st.rerun()
+            
+            # Show current image
+            if st.session_state.get("uploaded_image_data"):
+                st.markdown("**Current Image:**")
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.image(f"data:image/jpeg;base64,{st.session_state['uploaded_image_data']}", 
+                            caption=st.session_state.get("uploaded_image_name", "Image"), width=300)
+                with col2:
+                    if st.button("🗑️ Remove", key="del_image"):
+                        st.session_state.pop("uploaded_image_data", None)
+                        st.session_state.pop("uploaded_image_name", None)
+                        st.rerun()
+            else:
+                st.info("👆 Upload an image to start analyzing it with AI vision.")
+    
+    # Data Page - Upload CSV here
+    elif current_page == "data":
+        with st.expander("📊 Upload CSV Data", expanded=not st.session_state.get("uploaded_csv_data")):
+            uploaded_csv = st.file_uploader("Upload a CSV file to analyze", type=["csv"], key="csv_uploader")
+            if uploaded_csv:
+                try:
+                    uploaded_csv.seek(0)
+                    csv_content = uploaded_csv.read().decode("utf-8")
+                    st.session_state["uploaded_csv_data"] = csv_content
+                    st.session_state["uploaded_csv_name"] = uploaded_csv.name
+                    df_preview = pd.read_csv(io.StringIO(csv_content))
+                    st.success(f"✓ Loaded: {uploaded_csv.name} ({len(df_preview):,} rows, {len(df_preview.columns)} columns)")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error loading CSV: {e}")
+            
+            # Show current CSV info
+            if st.session_state.get("uploaded_csv_data"):
+                csv_name = st.session_state.get("uploaded_csv_name", "data.csv")
+                try:
+                    df_preview = pd.read_csv(io.StringIO(st.session_state["uploaded_csv_data"]))
+                    st.markdown(f"**Current Dataset:** {csv_name}")
+                    st.markdown(f"📊 {len(df_preview):,} rows × {len(df_preview.columns)} columns")
+                    st.markdown(f"**Columns:** {', '.join(df_preview.columns.tolist())}")
+                    
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        if st.checkbox("Show data preview", key="show_data_preview"):
+                            st.dataframe(df_preview.head(10), use_container_width=True)
+                    with col2:
+                        if st.button("🗑️ Remove", key="del_csv"):
+                            st.session_state.pop("uploaded_csv_data", None)
+                            st.session_state.pop("uploaded_csv_name", None)
+                            st.session_state.pop("last_chart", None)
+                            st.rerun()
+                except:
+                    pass
+            else:
+                st.info("👆 Upload a CSV file to start analyzing data and creating charts.")
+    
     # Welcome screen for Home page
     if not messages and current_page == "home":
         st.markdown(f"""
@@ -1699,46 +1722,46 @@ def render_chat():
             <div class="agent-card">
                 <div class="ac-icon">📄</div>
                 <div class="ac-title">PDF Questions</div>
-                <div class="ac-desc">Auto-routes to PDF Retriever</div>
+                <div class="ac-desc">Upload & query PDFs</div>
             </div>
             <div class="agent-card">
                 <div class="ac-icon">🔍</div>
                 <div class="ac-title">Web Search</div>
-                <div class="ac-desc">Auto-routes to Tavily Search</div>
+                <div class="ac-desc">Search the internet</div>
             </div>
             <div class="agent-card">
                 <div class="ac-icon">📝</div>
                 <div class="ac-title">Blog Analysis</div>
-                <div class="ac-desc">Auto-routes to Blog Analyzer</div>
+                <div class="ac-desc">Add & analyze blogs</div>
             </div>
             <div class="agent-card">
                 <div class="ac-icon">💬</div>
                 <div class="ac-title">Sentiment</div>
-                <div class="ac-desc">Auto-routes to Sentiment Agent</div>
+                <div class="ac-desc">Analyze emotions in text</div>
             </div>
             <div class="agent-card">
                 <div class="ac-icon">🌤️</div>
                 <div class="ac-title">Weather</div>
-                <div class="ac-desc">Auto-routes to Weather Agent</div>
+                <div class="ac-desc">Get weather forecasts</div>
             </div>
             <div class="agent-card">
                 <div class="ac-icon">🖼️</div>
                 <div class="ac-title">Image Analysis</div>
-                <div class="ac-desc">Use dedicated Image page</div>
+                <div class="ac-desc">Upload & analyze images</div>
             </div>
             <div class="agent-card">
                 <div class="ac-icon">📊</div>
                 <div class="ac-title">Data Analytics</div>
-                <div class="ac-desc">Use dedicated Data page</div>
+                <div class="ac-desc">Upload CSV & visualize</div>
             </div>
         </div>
         
         <p style="text-align:center;color:var(--text-400);font-size:0.8rem;margin-top:1.5rem;">
-            💡 Or use the sidebar to access dedicated agent pages for separate conversations
+            💡 Select an agent page from the sidebar to get started
         </p>
         """, unsafe_allow_html=True)
-    elif not messages:
-        # Welcome for dedicated agent pages
+    elif not messages and current_page not in ["pdf", "blog", "image", "data"]:
+        # Welcome for agent pages without uploads (web, sentiment, weather)
         st.markdown(f"""
         <div class="welcome-area" style="padding-top:4vh;">
             <div class="w-icon">{agent_info['icon']}</div>
@@ -1746,42 +1769,6 @@ def render_chat():
             <p>{get_agent_welcome(current_agent)}</p>
         </div>
         """, unsafe_allow_html=True)
-        
-        # Show image preview for image page
-        if current_page == "image" and st.session_state.get("uploaded_image_data"):
-            import base64
-            st.markdown("<div style='text-align:center;margin-top:1rem;'>", unsafe_allow_html=True)
-            st.image(f"data:image/jpeg;base64,{st.session_state['uploaded_image_data']}", 
-                    caption=st.session_state.get("uploaded_image_name", "Uploaded Image"),
-                    width=400)
-            st.markdown("</div>", unsafe_allow_html=True)
-        
-        # Show data preview for data page
-        if current_page == "data" and st.session_state.get("uploaded_csv_data"):
-            import pandas as pd
-            try:
-                df_preview = pd.read_csv(io.StringIO(st.session_state["uploaded_csv_data"]))
-                st.markdown(f"**📊 Dataset: {st.session_state.get('uploaded_csv_name', 'data.csv')}** — {len(df_preview):,} rows × {len(df_preview.columns)} columns")
-                st.dataframe(df_preview.head(10), use_container_width=True)
-            except:
-                pass
-    
-    # Show image in chat for image page if image exists
-    if current_page == "image" and st.session_state.get("uploaded_image_data") and messages:
-        with st.expander("📷 Current Image", expanded=False):
-            st.image(f"data:image/jpeg;base64,{st.session_state['uploaded_image_data']}", 
-                    caption=st.session_state.get("uploaded_image_name", "Image"),
-                    width=300)
-    
-    # Show data preview in chat for data page if data exists
-    if current_page == "data" and st.session_state.get("uploaded_csv_data") and messages:
-        with st.expander("📊 Current Dataset", expanded=False):
-            import pandas as pd
-            try:
-                df_preview = pd.read_csv(io.StringIO(st.session_state["uploaded_csv_data"]))
-                st.dataframe(df_preview.head(5), use_container_width=True)
-            except:
-                st.write("Error loading preview")
     
     # Display messages
     for msg in messages:
