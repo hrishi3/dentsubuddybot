@@ -435,7 +435,24 @@ def extract_txt(f):
 
 def load_blog_content(url):
     try:
-        resp = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+        # Use realistic browser headers to avoid 403 blocks
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Cache-Control": "max-age=0",
+        }
+        
+        # Create session for better handling
+        session = requests.Session()
+        resp = session.get(url, timeout=20, headers=headers, allow_redirects=True)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         
@@ -443,19 +460,47 @@ def load_blog_content(url):
         title = soup.find("title")
         title_text = title.get_text().strip() if title else "Untitled"
         
-        # Clean content
-        for tag in soup(["script", "style", "nav", "footer", "header", "aside"]): tag.decompose()
+        # Clean content - remove non-content elements
+        for tag in soup(["script", "style", "nav", "footer", "header", "aside", "noscript", "iframe", "form"]): 
+            tag.decompose()
         
-        # Try to get article content
-        article = soup.find("article") or soup.find("main") or soup.find("body")
-        if article:
-            text = article.get_text(separator="\n", strip=True)
-        else:
-            text = soup.get_text(separator="\n", strip=True)
+        # Try multiple extraction strategies
+        content_sources = [
+            soup.find("article"),
+            soup.find("main"),
+            soup.find("div", class_="post-content"),
+            soup.find("div", class_="entry-content"),
+            soup.find("div", class_="article-content"),
+            soup.find("div", class_="content"),
+            soup.find("div", id="content"),
+            soup.find("body")
+        ]
         
-        lines = [l.strip() for l in text.splitlines() if l.strip() and len(l.strip()) > 20]
+        text = ""
+        for source in content_sources:
+            if source:
+                # Get paragraphs first (usually the best content)
+                paragraphs = source.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'li'])
+                if paragraphs:
+                    text = "\n".join(p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True))
+                if not text:
+                    text = source.get_text(separator="\n", strip=True)
+                if len(text) > 100:  # Found meaningful content
+                    break
+        
+        # Filter lines - keep lines with at least 10 chars (less strict)
+        lines = [l.strip() for l in text.splitlines() if l.strip() and len(l.strip()) > 10]
         content = "\n".join(lines)
-        return title_text, content[:30000] if content else "[No content extracted]"
+        
+        if content and len(content) > 50:
+            return title_text, content[:30000]
+        else:
+            return title_text, f"[⚠️ Could not extract meaningful content from this page. The site may use JavaScript to load content dynamically. Try a different blog or paste the content manually.]"
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 403:
+            domain = url.split('/')[2] if '/' in url else url
+            return "Access Denied", f"[⚠️ {domain} blocks automated access. Try a different blog URL or paste the content manually.]"
+        return "Error", f"[HTTP Error: {e}]"
     except Exception as e:
         return "Error", f"[Blog load error: {e}]"
 
