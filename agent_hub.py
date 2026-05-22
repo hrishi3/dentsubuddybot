@@ -1644,15 +1644,19 @@ def render_chat():
     elif current_page == "image":
         with st.expander("🖼️ Upload Image", expanded=not st.session_state.get("uploaded_image_data")):
             uploaded_image = st.file_uploader("Upload an image to analyze", type=["png", "jpg", "jpeg", "gif", "webp"], key="image_uploader")
+            
+            # Only process if it's a NEW image (different from currently loaded)
             if uploaded_image:
-                import base64
-                uploaded_image.seek(0)
-                image_bytes = uploaded_image.read()
-                image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-                st.session_state["uploaded_image_data"] = image_b64
-                st.session_state["uploaded_image_name"] = uploaded_image.name
-                st.success(f"✓ Image loaded: {uploaded_image.name}")
-                st.rerun()
+                current_image_name = st.session_state.get("uploaded_image_name", "")
+                # Check if this is a new file (different name or no image loaded yet)
+                if uploaded_image.name != current_image_name:
+                    import base64
+                    uploaded_image.seek(0)
+                    image_bytes = uploaded_image.read()
+                    image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+                    st.session_state["uploaded_image_data"] = image_b64
+                    st.session_state["uploaded_image_name"] = uploaded_image.name
+                    st.success(f"✓ Image loaded: {uploaded_image.name}")
             
             # Show current image
             if st.session_state.get("uploaded_image_data"):
@@ -1673,17 +1677,21 @@ def render_chat():
     elif current_page == "data":
         with st.expander("📊 Upload CSV Data", expanded=not st.session_state.get("uploaded_csv_data")):
             uploaded_csv = st.file_uploader("Upload a CSV file to analyze", type=["csv"], key="csv_uploader")
+            
+            # Only process if it's a NEW CSV (different from currently loaded)
             if uploaded_csv:
-                try:
-                    uploaded_csv.seek(0)
-                    csv_content = uploaded_csv.read().decode("utf-8")
-                    st.session_state["uploaded_csv_data"] = csv_content
-                    st.session_state["uploaded_csv_name"] = uploaded_csv.name
-                    df_preview = pd.read_csv(io.StringIO(csv_content))
-                    st.success(f"✓ Loaded: {uploaded_csv.name} ({len(df_preview):,} rows, {len(df_preview.columns)} columns)")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error loading CSV: {e}")
+                current_csv_name = st.session_state.get("uploaded_csv_name", "")
+                # Check if this is a new file
+                if uploaded_csv.name != current_csv_name:
+                    try:
+                        uploaded_csv.seek(0)
+                        csv_content = uploaded_csv.read().decode("utf-8")
+                        st.session_state["uploaded_csv_data"] = csv_content
+                        st.session_state["uploaded_csv_name"] = uploaded_csv.name
+                        df_preview = pd.read_csv(io.StringIO(csv_content))
+                        st.success(f"✓ Loaded: {uploaded_csv.name} ({len(df_preview):,} rows, {len(df_preview.columns)} columns)")
+                    except Exception as e:
+                        st.error(f"Error loading CSV: {e}")
             
             # Show current CSV info
             if st.session_state.get("uploaded_csv_data"):
