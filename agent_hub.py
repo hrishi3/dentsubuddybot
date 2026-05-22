@@ -461,6 +461,70 @@ def load_blog_content(url):
 
 
 # ═══════════════════════════════════════════════
+# ENV FILE PARSING
+# ═══════════════════════════════════════════════
+
+def parse_env_file(content: str) -> dict:
+    """Parse an .env file content and return a dictionary of key-value pairs."""
+    config = {}
+    for line in content.splitlines():
+        line = line.strip()
+        # Skip comments and empty lines
+        if not line or line.startswith('#'):
+            continue
+        # Parse key=value pairs
+        if '=' in line:
+            key, _, value = line.partition('=')
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            config[key] = value
+    return config
+
+def load_env_to_session(config: dict):
+    """Load parsed env config into session state with proper key mapping."""
+    # Map env file keys to session state keys
+    key_mapping = {
+        'AZURE_ENDPOINT': 'azure_endpoint',
+        'AZURE_OPENAI_API_KEY': 'azure_api_key',
+        'MODEL_DEPLOYMENT': 'model_deployment',
+        'CHAT_MODEL_NAME': 'model_deployment',  # Alternative key
+        'API_VERSION': 'api_version',
+        'api_version': 'api_version',  # Alternative format
+        'TAVILY_API_KEY': 'tavily_key',
+        'WEATHER_API_KEY': 'weather_key',
+    }
+    
+    for env_key, session_key in key_mapping.items():
+        if env_key in config and config[env_key]:
+            st.session_state[session_key] = config[env_key]
+    
+    # Set default model if not specified
+    if 'model_deployment' not in st.session_state or not st.session_state['model_deployment']:
+        st.session_state['model_deployment'] = 'gpt-4o'
+    
+    # Set default API version if not specified
+    if 'api_version' not in st.session_state or not st.session_state['api_version']:
+        st.session_state['api_version'] = '2024-12-01-preview'
+
+def try_load_default_env():
+    """Try to load DENTSU_AZURE.env from the current directory on startup."""
+    if st.session_state.get("env_loaded"):
+        return
+    
+    env_path = "DENTSU_AZURE.env"
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, 'r') as f:
+                content = f.read()
+            config = parse_env_file(content)
+            load_env_to_session(config)
+            st.session_state["env_loaded"] = True
+            st.session_state["env_file_name"] = env_path
+        except Exception:
+            pass  # Silently fail if file can't be read
+
+
+# ═══════════════════════════════════════════════
 # LLM HELPER
 # ═══════════════════════════════════════════════
 
@@ -1477,6 +1541,9 @@ def render_sidebar():
     user = st.session_state["user"]
     current_page = st.session_state.get("current_page", "home")
     
+    # Try to auto-load env file on first render
+    try_load_default_env()
+    
     with st.sidebar:
         st.markdown('<div class="brand-box"><div class="logo">🤖 AI Agent Hub</div><div class="sub">Multi-Agent System</div></div>', unsafe_allow_html=True)
         ini = user["display_name"][0].upper()
@@ -1484,28 +1551,79 @@ def render_sidebar():
         
         st.markdown('<hr class="sd">', unsafe_allow_html=True)
         
-        # API Configuration
-        with st.expander("🔑 API Configuration", expanded=not st.session_state.get("azure_endpoint")):
-            ep = st.text_input("Azure Endpoint", value=st.session_state.get("azure_endpoint", ""),
-                              placeholder="https://your-resource.openai.azure.com/", key="ep_input")
-            ak = st.text_input("Azure API Key", value=st.session_state.get("azure_api_key", ""),
-                              placeholder="Enter API key", key="ak_input", type="password")
-            model = st.text_input("Model Deployment", value=st.session_state.get("model_deployment", "gpt-4o"),
-                                 placeholder="gpt-4o", key="model_input")
-            tavily = st.text_input("Tavily API Key (for web search)", value=st.session_state.get("tavily_key", ""),
-                                  placeholder="tvly-...", key="tavily_input", type="password")
-            weather = st.text_input("Weather API Key (weatherapi.com)", value=st.session_state.get("weather_key", ""),
-                                   placeholder="Enter weather API key", key="weather_input", type="password")
-            
-            if st.button("Save Configuration", use_container_width=True, key="save_config"):
-                if ep.strip() and ak.strip():
-                    st.session_state["azure_endpoint"] = ep.strip()
-                    st.session_state["azure_api_key"] = ak.strip()
-                    st.session_state["model_deployment"] = model.strip() or "gpt-4o"
-                    st.session_state["tavily_key"] = tavily.strip()
-                    st.session_state["weather_key"] = weather.strip()
-                    st.success("Configuration saved!"); st.rerun()
-                else: st.warning("Endpoint and API Key required.")
+        # API Configuration via ENV File
+        is_configured = st.session_state.get("azure_endpoint") and st.session_state.get("azure_api_key")
+        with st.expander("🔑 API Configuration", expanded=not is_configured):
+            # Show current status
+            if is_configured:
+                env_file = st.session_state.get("env_file_name", "Manual")
+                st.markdown(f'<div class="doc-item"><span class="di">✅</span>Configured ({env_file})</div>', unsafe_allow_html=True)
+                
+                # Show loaded keys (masked)
+                endpoint = st.session_state.get("azure_endpoint", "")
+                if endpoint:
+                    st.markdown(f"<p style='font-size:0.7rem;color:var(--text-400);margin:0.2rem 0;'>Endpoint: {endpoint[:30]}...</p>", unsafe_allow_html=True)
+                
+                has_tavily = "✓" if st.session_state.get("tavily_key") else "✗"
+                has_weather = "✓" if st.session_state.get("weather_key") else "✗"
+                st.markdown(f"<p style='font-size:0.7rem;color:var(--text-400);margin:0.2rem 0;'>Tavily: {has_tavily} | Weather: {has_weather}</p>", unsafe_allow_html=True)
+                
+                if st.button("🔄 Reload / Change Config", use_container_width=True, key="reload_config"):
+                    # Clear current config
+                    for key in ["azure_endpoint", "azure_api_key", "model_deployment", "api_version", "tavily_key", "weather_key", "env_loaded", "env_file_name"]:
+                        st.session_state.pop(key, None)
+                    st.rerun()
+            else:
+                st.markdown("<p style='font-size:0.75rem;color:var(--text-300);margin-bottom:0.5rem;'>Upload your DENTSU_AZURE.env file to configure all API keys at once.</p>", unsafe_allow_html=True)
+                
+                # ENV File Upload
+                uploaded_env = st.file_uploader("Upload .env file", type=["env", "txt"], key="env_uploader", label_visibility="collapsed")
+                if uploaded_env:
+                    try:
+                        content = uploaded_env.read().decode("utf-8")
+                        config = parse_env_file(content)
+                        
+                        # Validate required keys
+                        if config.get("AZURE_ENDPOINT") and config.get("AZURE_OPENAI_API_KEY"):
+                            load_env_to_session(config)
+                            st.session_state["env_loaded"] = True
+                            st.session_state["env_file_name"] = uploaded_env.name
+                            st.success(f"✓ Loaded {len(config)} settings")
+                            st.rerun()
+                        else:
+                            st.error("Missing AZURE_ENDPOINT or AZURE_OPENAI_API_KEY")
+                    except Exception as e:
+                        st.error(f"Error reading file: {e}")
+                
+                st.markdown("<p style='font-size:0.68rem;color:var(--text-400);margin-top:0.5rem;'>— or —</p>", unsafe_allow_html=True)
+                
+                # Manual fallback button
+                if st.button("Enter Manually", use_container_width=True, key="manual_config"):
+                    st.session_state["show_manual_config"] = True
+                    st.rerun()
+                
+                # Manual entry (hidden by default)
+                if st.session_state.get("show_manual_config"):
+                    st.markdown('<hr class="sd">', unsafe_allow_html=True)
+                    ep = st.text_input("Azure Endpoint", placeholder="https://your-resource.openai.azure.com/", key="ep_input")
+                    ak = st.text_input("Azure API Key", placeholder="Enter API key", key="ak_input", type="password")
+                    tavily = st.text_input("Tavily API Key", placeholder="tvly-...", key="tavily_input", type="password")
+                    weather = st.text_input("Weather API Key", placeholder="weatherapi.com key", key="weather_input", type="password")
+                    
+                    if st.button("Save", use_container_width=True, key="save_manual_config"):
+                        if ep.strip() and ak.strip():
+                            st.session_state["azure_endpoint"] = ep.strip()
+                            st.session_state["azure_api_key"] = ak.strip()
+                            st.session_state["model_deployment"] = "gpt-4o"
+                            st.session_state["api_version"] = "2024-12-01-preview"
+                            st.session_state["tavily_key"] = tavily.strip()
+                            st.session_state["weather_key"] = weather.strip()
+                            st.session_state["env_file_name"] = "Manual"
+                            st.session_state.pop("show_manual_config", None)
+                            st.success("✓ Saved")
+                            st.rerun()
+                        else:
+                            st.warning("Endpoint and API Key required")
         
         st.markdown('<hr class="sd">', unsafe_allow_html=True)
         st.markdown("<p style='font-size:0.72rem;font-weight:700;color:var(--text-400);letter-spacing:0.1em;text-transform:uppercase;'>📂 Pages</p>", unsafe_allow_html=True)
