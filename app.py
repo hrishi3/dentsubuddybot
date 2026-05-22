@@ -220,6 +220,23 @@ section[data-testid="stSidebar"] .stMarkdown span {
 }
 .doc-item .di { color: var(--primary); flex-shrink: 0; }
 
+/* Models & Tools expander styling */
+section[data-testid="stSidebar"] [data-testid="stExpander"] table {
+    font-size: 0.72rem !important;
+    width: 100% !important;
+}
+section[data-testid="stSidebar"] [data-testid="stExpander"] table th {
+    background: var(--bg-elevated) !important;
+    color: var(--text-200) !important;
+    font-size: 0.68rem !important;
+    padding: 0.4rem !important;
+}
+section[data-testid="stSidebar"] [data-testid="stExpander"] table td {
+    font-size: 0.7rem !important;
+    padding: 0.35rem !important;
+    color: var(--text-200) !important;
+}
+
 .stTextInput > div > div > input {
     background: var(--bg-elevated) !important; border: 1px solid var(--border) !important;
     color: var(--text-100) !important; border-radius: var(--radius-sm) !important;
@@ -1109,6 +1126,40 @@ def render_sidebar():
 
         if not user_docs and not st.session_state.get("url_docs"): st.caption("No documents uploaded")
 
+        st.markdown('<hr class="sd">', unsafe_allow_html=True)
+        
+        # Models & Tools Info
+        with st.expander("🛠️ Models & Tools", expanded=False):
+            st.markdown("""
+**🤖 AI Model**
+- **GPT-4o** (Azure OpenAI)
+  - Deployment: `gpt-4o`
+  - API Version: `2024-12-01-preview`
+  - Capabilities: Chat, Vision, Code Generation
+
+---
+
+**🔧 Built-in Tools**
+
+| Tool | Description |
+|------|-------------|
+| 🔍 **Web Search** | Tavily API (advanced search) |
+| 🌤️ **Weather** | WeatherAPI.com |
+| 📄 **PDF Reader** | PyMuPDF |
+| 📝 **DOCX Reader** | python-docx |
+| 📊 **Data Analysis** | pandas + matplotlib |
+| 🖼️ **Image Analysis** | GPT-4o Vision |
+| 🔗 **URL Loader** | BeautifulSoup |
+
+---
+
+**📚 Libraries**
+- `langchain` · `langchain-openai`
+- `streamlit` · `pandas` · `matplotlib`
+- `pymupdf` · `python-docx`
+- `beautifulsoup4` · `requests`
+            """)
+        
         st.markdown('<hr class="sd">', unsafe_allow_html=True)
         if st.button("Sign out", use_container_width=True, key="logout"):
             for k in list(st.session_state.keys()): del st.session_state[k]
