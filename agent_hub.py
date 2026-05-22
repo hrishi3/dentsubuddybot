@@ -445,40 +445,79 @@ def get_llm(max_tokens=2000, temperature=0.7):
 
 
 # ═══════════════════════════════════════════════
-# AGENT DEFINITIONS
+# PAGE & AGENT DEFINITIONS
 # ═══════════════════════════════════════════════
 
-AGENTS = {
-    "orchestrator": {
-        "name": "Smart Assistant",
-        "icon": "🤖",
-        "desc": "General AI assistant that can route to specialists",
-        "color": "#7C3AED"
+# Pages for navigation
+PAGES = {
+    "home": {
+        "name": "🏠 Multi-Agent Hub",
+        "short": "Home",
+        "icon": "🏠",
+        "desc": "AI auto-routes to the best agent",
+        "agent": "orchestrator"
     },
-    "pdf_qa": {
-        "name": "PDF Retriever",
+    "pdf": {
+        "name": "📄 PDF Chat",
+        "short": "PDFs",
         "icon": "📄",
-        "desc": "Answer questions from uploaded PDF documents",
-        "color": "#3B82F6"
+        "desc": "Dedicated PDF document Q&A",
+        "agent": "pdf_qa"
     },
-    "web_search": {
-        "name": "Web Search",
+    "web": {
+        "name": "🔍 Web Search",
+        "short": "Web",
         "icon": "🔍",
-        "desc": "Search the internet for current information",
-        "color": "#10B981"
+        "desc": "Search the internet",
+        "agent": "web_search"
     },
-    "blog_qa": {
-        "name": "Blog Analyzer",
+    "blog": {
+        "name": "📝 Blog Chat",
+        "short": "Blogs",
         "icon": "📝",
-        "desc": "Analyze and answer questions about blogs",
-        "color": "#F59E0B"
+        "desc": "Analyze blog articles",
+        "agent": "blog_qa"
     },
     "sentiment": {
-        "name": "Sentiment Analyzer",
+        "name": "💬 Sentiment",
+        "short": "Sentiment",
         "icon": "💬",
-        "desc": "Analyze sentiment of reviews and text",
-        "color": "#EC4899"
+        "desc": "Analyze text emotions",
+        "agent": "sentiment"
+    },
+    "weather": {
+        "name": "🌤️ Weather",
+        "short": "Weather",
+        "icon": "🌤️",
+        "desc": "Current weather & forecasts",
+        "agent": "weather"
+    },
+    "image": {
+        "name": "🖼️ Image Chat",
+        "short": "Image",
+        "icon": "🖼️",
+        "desc": "Analyze & ask about images",
+        "agent": "image_qa"
+    },
+    "data": {
+        "name": "📊 Data Analysis",
+        "short": "Data",
+        "icon": "📊",
+        "desc": "Analyze CSV data & create charts",
+        "agent": "data_analysis"
     }
+}
+
+# Agent configs (used internally)
+AGENTS = {
+    "orchestrator": {"name": "Multi-Agent Hub", "icon": "🤖", "color": "#7C3AED"},
+    "pdf_qa": {"name": "PDF Retriever", "icon": "📄", "color": "#3B82F6"},
+    "web_search": {"name": "Web Search", "icon": "🔍", "color": "#10B981"},
+    "blog_qa": {"name": "Blog Analyzer", "icon": "📝", "color": "#F59E0B"},
+    "sentiment": {"name": "Sentiment Analyzer", "icon": "💬", "color": "#EC4899"},
+    "weather": {"name": "Weather Agent", "icon": "🌤️", "color": "#06B6D4"},
+    "image_qa": {"name": "Image Analyzer", "icon": "🖼️", "color": "#8B5CF6"},
+    "data_analysis": {"name": "Data Analyst", "icon": "📊", "color": "#F97316"}
 }
 
 
@@ -556,6 +595,55 @@ def analyze_sentiment(text: str) -> str:
     return f"ANALYZE_SENTIMENT: {text}"
 
 
+@tool
+def get_weather(location: str) -> str:
+    """Get current weather and forecast for a location. Use this when user asks about weather, temperature, forecast, or climate conditions."""
+    weather_key = st.session_state.get("weather_key", "")
+    if not weather_key:
+        return "NO_WEATHER_KEY: Weather API key not configured."
+    
+    try:
+        import requests
+        # WeatherAPI.com endpoint
+        url = f"http://api.weatherapi.com/v1/forecast.json?key={weather_key}&q={location}&days=3&aqi=yes"
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        
+        current = data.get("current", {})
+        location_info = data.get("location", {})
+        forecast = data.get("forecast", {}).get("forecastday", [])
+        
+        result = f"""📍 **Location**: {location_info.get('name', location)}, {location_info.get('country', '')}
+🕐 **Local Time**: {location_info.get('localtime', 'N/A')}
+
+## Current Weather
+- 🌡️ **Temperature**: {current.get('temp_c', 'N/A')}°C ({current.get('temp_f', 'N/A')}°F)
+- 🤔 **Feels Like**: {current.get('feelslike_c', 'N/A')}°C
+- ☁️ **Condition**: {current.get('condition', {}).get('text', 'N/A')}
+- 💧 **Humidity**: {current.get('humidity', 'N/A')}%
+- 💨 **Wind**: {current.get('wind_kph', 'N/A')} km/h {current.get('wind_dir', '')}
+- 👁️ **Visibility**: {current.get('vis_km', 'N/A')} km
+- 🌡️ **UV Index**: {current.get('uv', 'N/A')}
+"""
+        
+        if forecast:
+            result += "\n## 3-Day Forecast\n"
+            for day in forecast:
+                date = day.get("date", "")
+                day_data = day.get("day", {})
+                result += f"\n**{date}**\n"
+                result += f"- High: {day_data.get('maxtemp_c', 'N/A')}°C | Low: {day_data.get('mintemp_c', 'N/A')}°C\n"
+                result += f"- {day_data.get('condition', {}).get('text', 'N/A')}\n"
+                result += f"- Rain chance: {day_data.get('daily_chance_of_rain', 0)}%\n"
+        
+        return result
+    except requests.exceptions.HTTPError as e:
+        return f"WEATHER_ERROR: Could not find weather for '{location}'. Please check the city name."
+    except Exception as e:
+        return f"WEATHER_ERROR: {str(e)}"
+
+
 # ═══════════════════════════════════════════════
 # GUARDRAILS
 # ═══════════════════════════════════════════════
@@ -626,13 +714,22 @@ def run_with_guardrails(prompt: str, context: str, agent_type: str, system_promp
 # AGENT IMPLEMENTATIONS (with LangChain)
 # ═══════════════════════════════════════════════
 
-def run_orchestrator(prompt: str, user: dict) -> tuple:
-    """Smart assistant with LangChain tools for autonomous routing."""
-    from langchain_core.messages import HumanMessage, SystemMessage
+def run_orchestrator(prompt: str, user: dict, chat_history: list = None) -> tuple:
+    """Smart multi-agent orchestrator that autonomously decides which agent/tool to use."""
+    from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
     from langchain.agents import create_tool_calling_agent, AgentExecutor
     from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
     
     today_str = datetime.now().strftime("%B %d, %Y")
+    
+    # Build chat history for context
+    history_messages = []
+    if chat_history:
+        for msg in chat_history[-6:]:  # Last 6 messages for context
+            if msg["role"] == "user":
+                history_messages.append(HumanMessage(content=msg["content"]))
+            else:
+                history_messages.append(AIMessage(content=msg["content"][:500]))
     
     # Check available resources
     has_pdfs = bool(get_user_documents(user["user_id"]))
@@ -645,36 +742,66 @@ def run_orchestrator(prompt: str, user: dict) -> tuple:
     
     if has_pdfs:
         available_tools.append(search_pdf_documents)
-        tool_info.append("- search_pdf_documents: Query uploaded PDF documents")
+        tool_info.append("- search_pdf_documents: Query uploaded PDF documents (use for any document-related questions)")
     if has_blogs:
         available_tools.append(search_blog_articles)
-        tool_info.append("- search_blog_articles: Query added blog articles")
+        tool_info.append("- search_blog_articles: Query added blog articles (use for blog content questions)")
     if has_tavily:
         available_tools.append(search_web)
-        tool_info.append("- search_web: Search the internet for current information")
+        tool_info.append("- search_web: Search the internet (use for current events, news, real-time info, anything you don't know)")
     available_tools.append(analyze_sentiment)
-    tool_info.append("- analyze_sentiment: Analyze emotions in text")
+    tool_info.append("- analyze_sentiment: Analyze emotions/sentiment in text (use when user wants sentiment analysis)")
+    
+    # Add weather tool if API key available
+    has_weather = bool(st.session_state.get("weather_key"))
+    if has_weather:
+        available_tools.append(get_weather)
+        tool_info.append("- get_weather: Get current weather and forecast for any city (use for weather questions)")
     
     tools_str = "\n".join(tool_info) if tool_info else "No specialized tools available."
     
-    system_prompt = f"""You are AI Agent Hub's Smart Orchestrator with access to specialized tools. Today is {today_str}.
+    # Enhanced system prompt for autonomous routing
+    system_prompt = f"""You are the AI Agent Hub — an intelligent multi-agent orchestrator. Today is {today_str}.
 
-You have access to these tools:
+You AUTOMATICALLY decide which tool to use based on the user's question. You have these specialized tools:
 {tools_str}
 
-Guidelines:
-1. For questions about uploaded documents, use search_pdf_documents
-2. For current events, news, or real-time info, use search_web
-3. For questions about blog articles, use search_blog_articles
-4. For sentiment/emotion analysis, use analyze_sentiment
-5. For general knowledge questions, answer directly without tools
+## ROUTING RULES (follow strictly):
 
-Always be helpful, accurate, and use markdown formatting."""
+1. **PDF/Document questions** → use search_pdf_documents
+   - ONLY when user explicitly mentions: "document", "PDF", "uploaded", "file", "my document", "the report"
+   - ONLY if user has uploaded PDFs
+   
+2. **Blog questions** → use search_blog_articles  
+   - ONLY when user explicitly mentions: "blog", "article I added", "the post"
+   - ONLY if user has added blogs
+   
+3. **Sentiment/Emotion analysis** → use analyze_sentiment
+   - ONLY when user explicitly asks for sentiment, emotion, or tone analysis
+   - When user says "analyze this review" or "what's the sentiment"
+
+4. **Weather questions** → use get_weather
+   - When user asks about weather, temperature, forecast, climate
+   - "What's the weather in...", "Is it raining in...", "Temperature in..."
+   
+5. **EVERYTHING ELSE** → use search_web (DEFAULT)
+   - General questions, facts, current events, news
+   - "What is...", "Who is...", "How to...", "Tell me about..."
+   - Weather, prices, sports, science, history, tech
+   - ANY question you're not 100% sure about
+   - If in doubt, ALWAYS use search_web
+
+## IMPORTANT:
+- DEFAULT to search_web for any general or unclear question
+- When using a tool, base your answer on the tool's output
+- Always cite sources when using search_web
+- Use markdown formatting for clarity
+- You have conversation history for follow-up questions"""
 
     try:
-        llm = get_llm(max_tokens=2000, temperature=0.7)
+        llm = get_llm(max_tokens=2000, temperature=0.5)
         
-        # If tools available, use agent
+        # If tools available, use agent with autonomous routing
         if available_tools:
             prompt_template = ChatPromptTemplate.from_messages([
                 ("system", system_prompt),
@@ -685,13 +812,24 @@ Always be helpful, accurate, and use markdown formatting."""
             
             try:
                 agent = create_tool_calling_agent(llm, available_tools, prompt_template)
-                executor = AgentExecutor(agent=agent, tools=available_tools, verbose=False, max_iterations=3)
-                result = executor.invoke({"input": prompt, "chat_history": []})
-                return result.get("output", "No response generated."), "orchestrator", [{"tools_used": True}]
+                executor = AgentExecutor(
+                    agent=agent, 
+                    tools=available_tools, 
+                    verbose=False, 
+                    max_iterations=5,
+                    handle_parsing_errors=True
+                )
+                result = executor.invoke({"input": prompt, "chat_history": history_messages})
+                
+                # Determine which agent was used for display
+                output = result.get("output", "No response generated.")
+                agent_used = detect_agent_used(result)
+                
+                return output, agent_used, [{"auto_routed": True}]
             except Exception as agent_error:
                 # Fallback to direct LLM if agent fails
                 response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=prompt)])
-                return response.content, "orchestrator", []
+                return response.content, "orchestrator", [{"fallback": True}]
         else:
             # No tools - direct response
             response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=prompt)])
@@ -700,8 +838,31 @@ Always be helpful, accurate, and use markdown formatting."""
         return f"Error: {str(e)}", "orchestrator", []
 
 
-def run_pdf_retriever(prompt: str, user: dict) -> tuple:
-    """Answer questions from uploaded PDF documents with guardrails."""
+def detect_agent_used(result: dict) -> str:
+    """Detect which agent/tool was used from the agent result."""
+    try:
+        # Check intermediate steps for tool usage
+        steps = result.get("intermediate_steps", [])
+        if steps:
+            for step in steps:
+                if hasattr(step[0], 'tool'):
+                    tool_name = step[0].tool
+                    if "pdf" in tool_name.lower():
+                        return "pdf_qa"
+                    elif "web" in tool_name.lower() or "search" in tool_name.lower():
+                        return "web_search"
+                    elif "blog" in tool_name.lower():
+                        return "blog_qa"
+                    elif "sentiment" in tool_name.lower():
+                        return "sentiment"
+    except:
+        pass
+    return "orchestrator"
+
+
+def run_pdf_retriever(prompt: str, user: dict, chat_history: list = None) -> tuple:
+    """Answer questions from uploaded PDF documents with guardrails and memory."""
+    from langchain_core.messages import HumanMessage, SystemMessage
     
     # Get all user documents
     docs = get_user_documents(user["user_id"])
@@ -717,14 +878,25 @@ def run_pdf_retriever(prompt: str, user: dict) -> tuple:
     
     full_context = "\n\n---\n\n".join(doc_contexts)
     
-    system_prompt = """You are the PDF Retriever Agent. Your role is to answer questions based ONLY on the provided document context.
+    # Build conversation context for follow-ups
+    conv_context = ""
+    if chat_history:
+        recent = chat_history[-4:]  # Last 4 messages
+        conv_parts = []
+        for msg in recent:
+            role = "User" if msg["role"] == "user" else "Assistant"
+            conv_parts.append(f"{role}: {msg['content'][:300]}")
+        conv_context = f"\n\nPrevious conversation:\n" + "\n".join(conv_parts)
+    
+    system_prompt = f"""You are the PDF Retriever Agent. Your role is to answer questions based ONLY on the provided document context.
 
 Rules:
 1. Answer using information from the documents
 2. Quote relevant passages when helpful
 3. If the answer isn't in the documents, say so clearly
 4. Cite which document the information comes from
-5. Use markdown formatting for clarity"""
+5. Use markdown formatting for clarity
+6. You have conversation history - handle follow-up questions naturally{conv_context}"""
 
     # Run with guardrails
     result = run_with_guardrails(prompt, full_context, "PDF Documents", system_prompt)
@@ -733,17 +905,26 @@ Rules:
     return result["response"], "pdf_qa", sources, result.get("out_of_scope", False)
 
 
-def run_web_search(prompt: str, user: dict) -> tuple:
-    """Search the web for current information using LangChain Tavily tool."""
+def run_web_search(prompt: str, user: dict, chat_history: list = None) -> tuple:
+    """Search the web for current information with conversation memory."""
     from langchain_core.messages import HumanMessage, SystemMessage
     
     tavily_key = st.session_state.get("tavily_key", "")
     if not tavily_key:
         return "🔍 **Tavily API Key not configured.**\n\nPlease add your Tavily API key in the sidebar under API Configuration.", "web_search", [], False
     
+    # Build search query with context from history if it's a follow-up
+    search_query = prompt
+    if chat_history and len(prompt.split()) < 5:  # Short query likely a follow-up
+        # Get context from last exchange
+        for msg in reversed(chat_history[-4:]):
+            if msg["role"] == "user" and msg["content"] != prompt:
+                search_query = f"{msg['content']} {prompt}"
+                break
+    
     try:
         # Use LangChain Tavily tool
-        search_results = search_web.invoke(prompt)
+        search_results = search_web.invoke(search_query)
         
         if search_results.startswith("NO_") or search_results.startswith("SEARCH_ERROR"):
             return f"🔍 {search_results}", "web_search", [], False
@@ -756,12 +937,19 @@ def run_web_search(prompt: str, user: dict) -> tuple:
             domain = re.sub(r'^https?://(www\.)?', '', url).split('/')[0]
             sources.append({"url": url, "title": domain})
         
-        # Generate synthesized answer
+        # Generate synthesized answer with conversation context
         llm = get_llm(max_tokens=1500, temperature=0.5)
         today_str = datetime.now().strftime("%B %d, %Y")
         
+        # Build conversation context
+        conv_context = ""
+        if chat_history:
+            recent = chat_history[-4:]
+            conv_parts = [f"{'User' if m['role']=='user' else 'Assistant'}: {m['content'][:200]}" for m in recent]
+            conv_context = f"\n\nPrevious conversation:\n" + "\n".join(conv_parts)
+        
         response = llm.invoke([
-            SystemMessage(content=f"You are the Web Search Agent. Today is {today_str}. Synthesize the search results to answer the user's question. Cite sources with URLs. Use markdown formatting."),
+            SystemMessage(content=f"You are the Web Search Agent. Today is {today_str}. Synthesize the search results to answer the user's question. Cite sources with URLs. Use markdown formatting. Handle follow-up questions naturally.{conv_context}"),
             HumanMessage(content=f"Search Results:\n{search_results}\n\n---\n\nQuestion: {prompt}")
         ])
         
@@ -770,8 +958,8 @@ def run_web_search(prompt: str, user: dict) -> tuple:
         return f"Search error: {str(e)}", "web_search", [], False
 
 
-def run_blog_analyzer(prompt: str, user: dict) -> tuple:
-    """Answer questions about added blog articles with guardrails."""
+def run_blog_analyzer(prompt: str, user: dict, chat_history: list = None) -> tuple:
+    """Answer questions about added blog articles with guardrails and memory."""
     
     blogs = get_user_blogs(user["user_id"])
     if not blogs:
@@ -788,7 +976,14 @@ def run_blog_analyzer(prompt: str, user: dict) -> tuple:
     
     full_context = "\n\n---\n\n".join(blog_contexts)
     
-    system_prompt = """You are the Blog Analyzer Agent. Your role is to analyze and answer questions about the provided blog articles.
+    # Build conversation context
+    conv_context = ""
+    if chat_history:
+        recent = chat_history[-4:]
+        conv_parts = [f"{'User' if m['role']=='user' else 'Assistant'}: {m['content'][:300]}" for m in recent]
+        conv_context = f"\n\nPrevious conversation:\n" + "\n".join(conv_parts)
+    
+    system_prompt = f"""You are the Blog Analyzer Agent. Your role is to analyze and answer questions about the provided blog articles.
 
 Capabilities:
 1. Summarize blog content
@@ -797,7 +992,8 @@ Capabilities:
 4. Extract key points and insights
 5. Identify the author's tone and perspective
 
-Always cite which blog article the information comes from. Use markdown formatting."""
+Always cite which blog article the information comes from. Use markdown formatting.
+Handle follow-up questions naturally using conversation history.{conv_context}"""
 
     # Run with guardrails
     result = run_with_guardrails(prompt, full_context, "Blog Articles", system_prompt)
@@ -805,15 +1001,23 @@ Always cite which blog article the information comes from. Use markdown formatti
     return result["response"], "blog_qa", sources, result.get("out_of_scope", False)
 
 
-def run_sentiment_analyzer(prompt: str, user: dict) -> tuple:
-    """Analyze sentiment of reviews and text using LangChain."""
+def run_sentiment_analyzer(prompt: str, user: dict, chat_history: list = None) -> tuple:
+    """Analyze sentiment of reviews and text with conversation memory."""
     from langchain_core.messages import HumanMessage, SystemMessage
     
-    # Guardrail: Check if text is too short
-    if len(prompt.strip()) < 10:
+    # Guardrail: Check if text is too short (unless it's a follow-up)
+    is_followup = chat_history and len(chat_history) > 0
+    if len(prompt.strip()) < 10 and not is_followup:
         return "⚠️ **Text too short for sentiment analysis.**\n\nPlease provide a longer text (review, feedback, comment) to analyze.", "sentiment", [], False
     
-    system_prompt = """You are the Sentiment Analyzer Agent. Analyze the sentiment of the provided text.
+    # Build conversation context
+    conv_context = ""
+    if chat_history:
+        recent = chat_history[-4:]
+        conv_parts = [f"{'User' if m['role']=='user' else 'Assistant'}: {m['content'][:300]}" for m in recent]
+        conv_context = f"\n\nPrevious conversation:\n" + "\n".join(conv_parts)
+    
+    system_prompt = f"""You are the Sentiment Analyzer Agent. Analyze the sentiment of the provided text.
 
 For each analysis, provide:
 1. **Overall Sentiment**: POSITIVE, NEGATIVE, or NEUTRAL (with confidence percentage)
@@ -823,7 +1027,8 @@ For each analysis, provide:
 5. **Key Phrases**: Important positive and negative phrases
 6. **Summary**: Brief explanation of the sentiment
 
-Format your response clearly with markdown. Be objective and thorough."""
+Format your response clearly with markdown. Be objective and thorough.
+Handle follow-up questions naturally using conversation history.{conv_context}"""
 
     try:
         llm = get_llm(max_tokens=1500, temperature=0.3)
@@ -844,6 +1049,289 @@ Format your response clearly with markdown. Be objective and thorough."""
         return response.content, "sentiment", [{"sentiment": sentiment}], False
     except Exception as e:
         return f"Error: {str(e)}", "sentiment", [], False
+
+
+def run_weather_agent(prompt: str, user: dict, chat_history: list = None) -> tuple:
+    """Get weather information for a location with conversation memory."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+    
+    weather_key = st.session_state.get("weather_key", "")
+    if not weather_key:
+        return "🌤️ **Weather API Key not configured.**\n\nPlease add your Weather API key in the sidebar under API Configuration.", "weather", [], False
+    
+    # Build conversation context for follow-ups
+    conv_context = ""
+    if chat_history:
+        recent = chat_history[-4:]
+        conv_parts = [f"{'User' if m['role']=='user' else 'Assistant'}: {m['content'][:200]}" for m in recent]
+        conv_context = f"\n\nPrevious conversation:\n" + "\n".join(conv_parts)
+    
+    # Extract location from prompt
+    try:
+        llm = get_llm(max_tokens=100, temperature=0)
+        extract_prompt = f"""Extract the city/location name from this weather question. Return ONLY the city name, nothing else.
+If user says "there" or similar, use conversation history to find the last mentioned location.{conv_context}
+
+Question: {prompt}
+City:"""
+        location_response = llm.invoke([HumanMessage(content=extract_prompt)])
+        location = location_response.content.strip().strip('"').strip("'")
+        
+        if not location or len(location) < 2:
+            return "🌤️ **Please specify a location.**\n\nExample: 'What's the weather in Tokyo?' or 'Weather forecast for New York'", "weather", [], False
+        
+        # Get weather data using the tool
+        weather_data = get_weather.invoke(location)
+        
+        if weather_data.startswith("WEATHER_ERROR") or weather_data.startswith("NO_"):
+            return f"⚠️ **Could not get weather for '{location}'**\n\nPlease check the city name and try again. Examples:\n- 'Weather in London'\n- 'Tokyo forecast'\n- 'Temperature in Paris'", "weather", [], False
+        
+        # Enhance with LLM response
+        response_llm = get_llm(max_tokens=800, temperature=0.5)
+        enhanced = response_llm.invoke([
+            SystemMessage(content=f"You are the Weather Agent. Present this weather data in a friendly, informative way. Add relevant advice (bring umbrella, wear sunscreen, etc.). Use emojis appropriately. Handle follow-up questions naturally.{conv_context}"),
+            HumanMessage(content=f"Weather data:\n{weather_data}\n\nUser question: {prompt}")
+        ])
+        
+        return enhanced.content, "weather", [{"location": location, "type": "weather"}], False
+    except Exception as e:
+        return f"Error getting weather: {str(e)}", "weather", [], False
+
+
+def run_image_analyzer(prompt: str, user: dict, chat_history: list = None) -> tuple:
+    """Analyze images and answer questions about them using GPT-4o vision."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+    
+    # Check if image is uploaded
+    image_data = st.session_state.get("uploaded_image_data")
+    image_name = st.session_state.get("uploaded_image_name", "image")
+    
+    if not image_data:
+        return "🖼️ **No image uploaded yet.**\n\nPlease upload an image in the sidebar to use the Image Analyzer.", "image_qa", [], False
+    
+    # Build conversation context for follow-ups
+    conv_context = ""
+    if chat_history:
+        recent = chat_history[-4:]
+        conv_parts = [f"{'User' if m['role']=='user' else 'Assistant'}: {m['content'][:200]}" for m in recent]
+        conv_context = f"\n\nPrevious conversation about this image:\n" + "\n".join(conv_parts)
+    
+    system_prompt = f"""You are the Image Analyzer Agent. You have excellent vision capabilities and can analyze images in detail.
+
+Your capabilities:
+1. Describe what you see in the image
+2. Identify objects, people, text, colors, and patterns
+3. Answer specific questions about the image content
+4. Read and extract text from images (OCR)
+5. Analyze charts, diagrams, and visual data
+6. Identify emotions, settings, and contexts
+7. Compare elements within the image
+
+Guidelines:
+- Be detailed and accurate in your observations
+- If you're uncertain about something, say so
+- Use markdown formatting for clarity
+- Handle follow-up questions naturally using conversation history{conv_context}"""
+
+    try:
+        from langchain_openai import AzureChatOpenAI
+        
+        # Create vision-capable LLM
+        llm = AzureChatOpenAI(
+            azure_deployment=st.session_state.get("model_deployment", "gpt-4o"),
+            api_version=st.session_state.get("api_version", "2024-12-01-preview"),
+            azure_endpoint=st.session_state.get("azure_endpoint", ""),
+            api_key=st.session_state.get("azure_api_key", ""),
+            temperature=0.5,
+            max_tokens=2000
+        )
+        
+        # Create message with image (base64)
+        message_content = [
+            {"type": "text", "text": f"{system_prompt}\n\nUser question: {prompt}"},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{image_data}",
+                    "detail": "high"
+                }
+            }
+        ]
+        
+        response = llm.invoke([HumanMessage(content=message_content)])
+        
+        return response.content, "image_qa", [{"name": image_name, "type": "image"}], False
+    except Exception as e:
+        return f"Error analyzing image: {str(e)}", "image_qa", [], False
+
+
+def run_data_analyzer(prompt: str, user: dict, chat_history: list = None) -> tuple:
+    """Analyze CSV data, answer questions, and create visualizations using pandas."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+    import pandas as pd
+    import matplotlib
+    matplotlib.use('Agg')  # Non-interactive backend
+    import matplotlib.pyplot as plt
+    
+    # Check if data is uploaded
+    csv_data = st.session_state.get("uploaded_csv_data")
+    csv_name = st.session_state.get("uploaded_csv_name", "data.csv")
+    
+    if csv_data is None:
+        return "📊 **No CSV file uploaded yet.**\n\nPlease upload a CSV file in the sidebar to use the Data Analyst.", "data_analysis", [], False
+    
+    # Load the dataframe
+    try:
+        df = pd.read_csv(io.StringIO(csv_data))
+    except Exception as e:
+        return f"Error reading CSV: {str(e)}", "data_analysis", [], False
+    
+    # Build data context
+    data_info = f"""**Dataset: {csv_name}**
+- Rows: {len(df):,}
+- Columns: {len(df.columns)}
+- Column names: {', '.join(df.columns.tolist())}
+
+**Column Types:**
+{df.dtypes.to_string()}
+
+**Sample Data (first 5 rows):**
+{df.head().to_markdown()}
+
+**Basic Statistics:**
+{df.describe().to_markdown()}"""
+
+    # Build conversation context
+    conv_context = ""
+    if chat_history:
+        recent = chat_history[-4:]
+        conv_parts = [f"{'User' if m['role']=='user' else 'Assistant'}: {m['content'][:300]}" for m in recent]
+        conv_context = f"\n\nPrevious conversation:\n" + "\n".join(conv_parts)
+    
+    # Check if user wants a visualization
+    viz_keywords = ["chart", "graph", "plot", "visualize", "visualization", "histogram", "bar", "pie", "scatter", "line", "show me", "draw", "create a"]
+    wants_viz = any(kw in prompt.lower() for kw in viz_keywords)
+    
+    if wants_viz:
+        # Generate visualization code
+        viz_prompt = f"""You are a Python data visualization expert. Given this dataset info and user request, generate ONLY executable Python code to create the visualization.
+
+{data_info}
+
+User request: {prompt}
+
+Requirements:
+1. Use matplotlib.pyplot as plt (already imported)
+2. The dataframe is available as 'df'
+3. Use a clean, modern style with plt.style.use('seaborn-v0_8-whitegrid') or similar
+4. Set figure size appropriately: plt.figure(figsize=(10, 6))
+5. Add title, labels, and legend as needed
+6. Use colors that look good: consider using a color palette
+7. For categorical data with many values, limit to top 10-15
+8. End with plt.tight_layout()
+9. DO NOT call plt.show() or plt.savefig()
+10. Return ONLY the Python code, no explanations, no markdown code blocks
+
+Generate the code:"""
+
+        try:
+            llm = get_llm(max_tokens=1000, temperature=0.2)
+            code_response = llm.invoke([
+                SystemMessage(content="You are a Python code generator. Output ONLY executable Python code, nothing else."),
+                HumanMessage(content=viz_prompt)
+            ])
+            
+            code = code_response.content.strip()
+            # Clean up code if wrapped in markdown
+            if code.startswith("```"):
+                code = code.split("```")[1]
+                if code.startswith("python"):
+                    code = code[6:]
+                code = code.strip()
+            
+            # Execute the visualization code with safe style
+            try:
+                plt.style.use('seaborn-v0_8-whitegrid')
+            except:
+                try:
+                    plt.style.use('ggplot')
+                except:
+                    pass  # Use default style
+            
+            plt.figure(figsize=(10, 6))
+            
+            # Create a safe execution environment
+            exec_globals = {"df": df, "plt": plt, "pd": pd}
+            exec(code, exec_globals)
+            
+            plt.tight_layout()
+            
+            # Save to buffer
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight', facecolor='white')
+            buf.seek(0)
+            plt.close('all')
+            
+            # Store chart in session for display
+            import base64
+            chart_b64 = base64.b64encode(buf.read()).decode('utf-8')
+            st.session_state["last_chart"] = chart_b64
+            
+            # Generate explanation
+            explain_llm = get_llm(max_tokens=500, temperature=0.5)
+            explanation = explain_llm.invoke([
+                SystemMessage(content="You are a data analyst. Briefly explain what the chart shows based on the data."),
+                HumanMessage(content=f"Dataset info:\n{data_info}\n\nUser asked for: {prompt}\n\nProvide a brief, insightful explanation of what the visualization reveals.")
+            ])
+            
+            response = f"📊 **Chart Generated!**\n\n{explanation.content}\n\n*(Chart displayed below)*"
+            return response, "data_analysis", [{"name": csv_name, "type": "chart", "chart": chart_b64}], False
+            
+        except Exception as e:
+            # Fallback to text analysis if viz fails
+            plt.close('all')
+            error_msg = str(e)
+            # Continue to text analysis with note about viz failure
+    
+    # Text-based analysis
+    system_prompt = f"""You are the Data Analyst Agent. You analyze CSV data and provide insights.
+
+{data_info}
+
+Your capabilities:
+1. Answer questions about the data
+2. Calculate statistics (mean, median, mode, std, etc.)
+3. Identify trends and patterns
+4. Find correlations between columns
+5. Summarize key insights
+6. Suggest further analyses
+
+Guidelines:
+- Be precise with numbers
+- Use markdown tables for structured data
+- Highlight key findings
+- If a question can't be answered with the data, say so
+- Handle follow-up questions using conversation history{conv_context}"""
+
+    try:
+        llm = get_llm(max_tokens=2000, temperature=0.3)
+        
+        # For specific calculations, try to compute them
+        analysis_prompt = f"""Based on the dataset information provided, answer this question:
+
+{prompt}
+
+If the question requires specific calculations, compute them from the data summary provided.
+If it requires data not available in the summary, explain what additional data would be needed."""
+
+        response = llm.invoke([
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=analysis_prompt)
+        ])
+        
+        return response.content, "data_analysis", [{"name": csv_name, "type": "data"}], False
+    except Exception as e:
+        return f"Error analyzing data: {str(e)}", "data_analysis", [], False
 
 
 # ═══════════════════════════════════════════════
@@ -879,6 +1367,17 @@ def render_sources(sources, agent_type):
     elif agent_type in ["pdf_qa", "blog_qa"]:
         names = ", ".join([s.get("name", s.get("title", "Document"))[:20] for s in sources])
         st.markdown(f'<div class="agent-badge">📎 {names}</div>', unsafe_allow_html=True)
+    elif agent_type == "weather":
+        location = sources[0].get("location", "Location") if sources else "Weather"
+        st.markdown(f'<div class="agent-badge">🌍 {location}</div>', unsafe_allow_html=True)
+    elif agent_type == "image_qa":
+        img_name = sources[0].get("name", "Image")[:25] if sources else "Image"
+        st.markdown(f'<div class="agent-badge">🖼️ {img_name}</div>', unsafe_allow_html=True)
+    elif agent_type == "data_analysis":
+        csv_name = sources[0].get("name", "data.csv")[:25] if sources else "Data"
+        data_type = sources[0].get("type", "data") if sources else "data"
+        icon = "📊" if data_type == "chart" else "📈"
+        st.markdown(f'<div class="agent-badge">{icon} {csv_name}</div>', unsafe_allow_html=True)
 
 def generate_title(content):
     words = content.split()[:6]
@@ -900,14 +1399,16 @@ def render_login():
             <div class="lb-tag">Multi-Agent Research System</div>
             <div class="lb-desc">
                 Your intelligent multi-agent assistant — PDF analysis, web search, 
-                blog insights, sentiment analysis, and more. All in one place.
+                blog insights, sentiment, weather, image analysis, data analytics, and more.
             </div>
             <div class="login-features">
                 <div class="login-feat"><span class="lf-dot"></span> PDF Q&A</div>
                 <div class="login-feat"><span class="lf-dot"></span> Web Search</div>
                 <div class="login-feat"><span class="lf-dot"></span> Blog Analysis</div>
                 <div class="login-feat"><span class="lf-dot"></span> Sentiment</div>
-                <div class="login-feat"><span class="lf-dot"></span> Multi-Agent</div>
+                <div class="login-feat"><span class="lf-dot"></span> Weather</div>
+                <div class="login-feat"><span class="lf-dot"></span> Image AI</div>
+                <div class="login-feat"><span class="lf-dot"></span> Data Analytics</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -921,7 +1422,7 @@ def render_login():
                     if u and p:
                         user = authenticate(u, p)
                         if user:
-                            st.session_state.update(authenticated=True, user=user, current_agent="orchestrator", messages=[])
+                            st.session_state.update(authenticated=True, user=user, current_page="home", messages_home=[])
                             st.rerun()
                         else: st.error("Invalid credentials.")
                     else: st.warning("Please fill in both fields.")
@@ -950,6 +1451,8 @@ def render_login():
 
 def render_sidebar():
     user = st.session_state["user"]
+    current_page = st.session_state.get("current_page", "home")
+    
     with st.sidebar:
         st.markdown('<div class="brand-box"><div class="logo">🤖 AI Agent Hub</div><div class="sub">Multi-Agent System</div></div>', unsafe_allow_html=True)
         ini = user["display_name"][0].upper()
@@ -967,6 +1470,8 @@ def render_sidebar():
                                  placeholder="gpt-4o", key="model_input")
             tavily = st.text_input("Tavily API Key (for web search)", value=st.session_state.get("tavily_key", ""),
                                   placeholder="tvly-...", key="tavily_input", type="password")
+            weather = st.text_input("Weather API Key (weatherapi.com)", value=st.session_state.get("weather_key", ""),
+                                   placeholder="Enter weather API key", key="weather_input", type="password")
             
             if st.button("Save Configuration", use_container_width=True, key="save_config"):
                 if ep.strip() and ak.strip():
@@ -974,21 +1479,23 @@ def render_sidebar():
                     st.session_state["azure_api_key"] = ak.strip()
                     st.session_state["model_deployment"] = model.strip() or "gpt-4o"
                     st.session_state["tavily_key"] = tavily.strip()
+                    st.session_state["weather_key"] = weather.strip()
                     st.success("Configuration saved!"); st.rerun()
                 else: st.warning("Endpoint and API Key required.")
         
         st.markdown('<hr class="sd">', unsafe_allow_html=True)
-        st.markdown("<p style='font-size:0.72rem;font-weight:700;color:var(--text-400);letter-spacing:0.1em;text-transform:uppercase;'>Select Agent</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size:0.72rem;font-weight:700;color:var(--text-400);letter-spacing:0.1em;text-transform:uppercase;'>📂 Pages</p>", unsafe_allow_html=True)
         
-        # Agent Selection
-        current_agent = st.session_state.get("current_agent", "orchestrator")
-        for agent_id, agent_info in AGENTS.items():
-            is_active = agent_id == current_agent
+        # Page Navigation (replaces agent selection)
+        for page_id, page_info in PAGES.items():
+            is_active = page_id == current_page
             btn_type = "primary" if is_active else "secondary"
-            if st.button(f"{agent_info['icon']} {agent_info['name']}", key=f"agent_{agent_id}",
+            if st.button(f"{page_info['icon']} {page_info['short']}", key=f"page_{page_id}",
                         use_container_width=True, type=btn_type):
-                st.session_state["current_agent"] = agent_id
-                st.session_state["messages"] = []
+                st.session_state["current_page"] = page_id
+                # Each page has its own message history
+                if f"messages_{page_id}" not in st.session_state:
+                    st.session_state[f"messages_{page_id}"] = []
                 st.rerun()
         
         st.markdown('<hr class="sd">', unsafe_allow_html=True)
@@ -1049,9 +1556,70 @@ def render_sidebar():
         
         st.markdown('<hr class="sd">', unsafe_allow_html=True)
         
-        # New Chat
+        # Image Upload
+        st.markdown("<p style='font-size:0.72rem;font-weight:700;color:var(--text-400);letter-spacing:0.1em;text-transform:uppercase;'>🖼️ Image Analysis</p>", unsafe_allow_html=True)
+        
+        uploaded_image = st.file_uploader("Upload Image", type=["png", "jpg", "jpeg", "gif", "webp"], key="image_uploader", label_visibility="collapsed")
+        if uploaded_image:
+            # Convert to base64 for GPT-4o vision
+            import base64
+            uploaded_image.seek(0)
+            image_bytes = uploaded_image.read()
+            image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+            st.session_state["uploaded_image_data"] = image_b64
+            st.session_state["uploaded_image_name"] = uploaded_image.name
+            st.success(f"Image loaded: {uploaded_image.name}")
+        
+        # Show current image
+        if st.session_state.get("uploaded_image_data"):
+            img_name = st.session_state.get("uploaded_image_name", "image")
+            cols = st.columns([5, 1])
+            with cols[0]:
+                st.markdown(f'<div class="doc-item"><span class="di">🖼️</span>{img_name[:25]}</div>', unsafe_allow_html=True)
+            with cols[1]:
+                if st.button("×", key="del_image"):
+                    st.session_state.pop("uploaded_image_data", None)
+                    st.session_state.pop("uploaded_image_name", None)
+                    st.rerun()
+        
+        st.markdown('<hr class="sd">', unsafe_allow_html=True)
+        
+        # CSV Upload for Data Analysis
+        st.markdown("<p style='font-size:0.72rem;font-weight:700;color:var(--text-400);letter-spacing:0.1em;text-transform:uppercase;'>📊 Data Analysis</p>", unsafe_allow_html=True)
+        
+        uploaded_csv = st.file_uploader("Upload CSV", type=["csv"], key="csv_uploader", label_visibility="collapsed")
+        if uploaded_csv:
+            try:
+                uploaded_csv.seek(0)
+                csv_content = uploaded_csv.read().decode("utf-8")
+                st.session_state["uploaded_csv_data"] = csv_content
+                st.session_state["uploaded_csv_name"] = uploaded_csv.name
+                # Quick preview
+                import pandas as pd
+                df_preview = pd.read_csv(io.StringIO(csv_content))
+                st.success(f"Loaded: {uploaded_csv.name} ({len(df_preview):,} rows, {len(df_preview.columns)} cols)")
+            except Exception as e:
+                st.error(f"Error loading CSV: {e}")
+        
+        # Show current CSV
+        if st.session_state.get("uploaded_csv_data"):
+            csv_name = st.session_state.get("uploaded_csv_name", "data.csv")
+            cols = st.columns([5, 1])
+            with cols[0]:
+                st.markdown(f'<div class="doc-item"><span class="di">📊</span>{csv_name[:25]}</div>', unsafe_allow_html=True)
+            with cols[1]:
+                if st.button("×", key="del_csv"):
+                    st.session_state.pop("uploaded_csv_data", None)
+                    st.session_state.pop("uploaded_csv_name", None)
+                    st.session_state.pop("last_chart", None)
+                    st.rerun()
+        
+        st.markdown('<hr class="sd">', unsafe_allow_html=True)
+        
+        # New Chat (clears current page's messages)
         if st.button("＋ New Chat", use_container_width=True):
-            st.session_state["messages"] = []
+            current_page = st.session_state.get("current_page", "home")
+            st.session_state[f"messages_{current_page}"] = []
             st.rerun()
         
         st.markdown('<hr class="sd">', unsafe_allow_html=True)
@@ -1078,61 +1646,149 @@ def render_chat():
         </div>""", unsafe_allow_html=True)
         return
     
-    current_agent = st.session_state.get("current_agent", "orchestrator")
+    # Get current page and agent
+    current_page = st.session_state.get("current_page", "home")
+    page_info = PAGES.get(current_page, PAGES["home"])
+    current_agent = page_info["agent"]
     agent_info = AGENTS.get(current_agent, AGENTS["orchestrator"])
-    messages = st.session_state.get("messages", [])
+    
+    # Get page-specific messages
+    messages_key = f"messages_{current_page}"
+    if messages_key not in st.session_state:
+        st.session_state[messages_key] = []
+    messages = st.session_state[messages_key]
     user = st.session_state["user"]
     
-    # Welcome screen
-    if not messages:
+    # Page header
+    st.markdown(f"""<div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;">
+        <span style="font-size:1.5rem;">{page_info['icon']}</span>
+        <span style="font-size:1.1rem;font-weight:600;color:var(--text-100);">{page_info['name']}</span>
+        <span style="font-size:0.75rem;color:var(--text-400);margin-left:0.5rem;">{page_info['desc']}</span>
+    </div>""", unsafe_allow_html=True)
+    
+    # Welcome screen for Home page
+    if not messages and current_page == "home":
         st.markdown(f"""
-        <div class="welcome-area">
-            <div class="w-icon">{agent_info['icon']}</div>
-            <h2>{agent_info['name']}</h2>
-            <p>{get_agent_welcome(current_agent)}</p>
+        <div class="welcome-area" style="padding-top:4vh;">
+            <div class="w-icon">🤖</div>
+            <h2>Multi-Agent Hub</h2>
+            <p>Ask anything! I'll automatically route your question to the best specialist agent.</p>
         </div>
         
         <div class="agent-grid">
             <div class="agent-card">
-                <div class="ac-icon">🤖</div>
-                <div class="ac-title">Smart Assistant</div>
-                <div class="ac-desc">General AI help & routing</div>
-            </div>
-            <div class="agent-card">
                 <div class="ac-icon">📄</div>
-                <div class="ac-title">PDF Retriever</div>
-                <div class="ac-desc">Q&A from your documents</div>
+                <div class="ac-title">PDF Questions</div>
+                <div class="ac-desc">Auto-routes to PDF Retriever</div>
             </div>
             <div class="agent-card">
                 <div class="ac-icon">🔍</div>
                 <div class="ac-title">Web Search</div>
-                <div class="ac-desc">Real-time web information</div>
+                <div class="ac-desc">Auto-routes to Tavily Search</div>
             </div>
             <div class="agent-card">
                 <div class="ac-icon">📝</div>
-                <div class="ac-title">Blog Analyzer</div>
-                <div class="ac-desc">Insights from articles</div>
+                <div class="ac-title">Blog Analysis</div>
+                <div class="ac-desc">Auto-routes to Blog Analyzer</div>
             </div>
             <div class="agent-card">
                 <div class="ac-icon">💬</div>
                 <div class="ac-title">Sentiment</div>
-                <div class="ac-desc">Analyze review emotions</div>
+                <div class="ac-desc">Auto-routes to Sentiment Agent</div>
+            </div>
+            <div class="agent-card">
+                <div class="ac-icon">🌤️</div>
+                <div class="ac-title">Weather</div>
+                <div class="ac-desc">Auto-routes to Weather Agent</div>
+            </div>
+            <div class="agent-card">
+                <div class="ac-icon">🖼️</div>
+                <div class="ac-title">Image Analysis</div>
+                <div class="ac-desc">Use dedicated Image page</div>
+            </div>
+            <div class="agent-card">
+                <div class="ac-icon">📊</div>
+                <div class="ac-title">Data Analytics</div>
+                <div class="ac-desc">Use dedicated Data page</div>
             </div>
         </div>
+        
+        <p style="text-align:center;color:var(--text-400);font-size:0.8rem;margin-top:1.5rem;">
+            💡 Or use the sidebar to access dedicated agent pages for separate conversations
+        </p>
         """, unsafe_allow_html=True)
+    elif not messages:
+        # Welcome for dedicated agent pages
+        st.markdown(f"""
+        <div class="welcome-area" style="padding-top:4vh;">
+            <div class="w-icon">{agent_info['icon']}</div>
+            <h2>{agent_info['name']}</h2>
+            <p>{get_agent_welcome(current_agent)}</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Show image preview for image page
+        if current_page == "image" and st.session_state.get("uploaded_image_data"):
+            import base64
+            st.markdown("<div style='text-align:center;margin-top:1rem;'>", unsafe_allow_html=True)
+            st.image(f"data:image/jpeg;base64,{st.session_state['uploaded_image_data']}", 
+                    caption=st.session_state.get("uploaded_image_name", "Uploaded Image"),
+                    width=400)
+            st.markdown("</div>", unsafe_allow_html=True)
+        
+        # Show data preview for data page
+        if current_page == "data" and st.session_state.get("uploaded_csv_data"):
+            import pandas as pd
+            try:
+                df_preview = pd.read_csv(io.StringIO(st.session_state["uploaded_csv_data"]))
+                st.markdown(f"**📊 Dataset: {st.session_state.get('uploaded_csv_name', 'data.csv')}** — {len(df_preview):,} rows × {len(df_preview.columns)} columns")
+                st.dataframe(df_preview.head(10), use_container_width=True)
+            except:
+                pass
+    
+    # Show image in chat for image page if image exists
+    if current_page == "image" and st.session_state.get("uploaded_image_data") and messages:
+        with st.expander("📷 Current Image", expanded=False):
+            st.image(f"data:image/jpeg;base64,{st.session_state['uploaded_image_data']}", 
+                    caption=st.session_state.get("uploaded_image_name", "Image"),
+                    width=300)
+    
+    # Show data preview in chat for data page if data exists
+    if current_page == "data" and st.session_state.get("uploaded_csv_data") and messages:
+        with st.expander("📊 Current Dataset", expanded=False):
+            import pandas as pd
+            try:
+                df_preview = pd.read_csv(io.StringIO(st.session_state["uploaded_csv_data"]))
+                st.dataframe(df_preview.head(5), use_container_width=True)
+            except:
+                st.write("Error loading preview")
     
     # Display messages
     for msg in messages:
-        avatar = "👤" if msg["role"] == "user" else agent_info["icon"]
+        # For home page, show which agent was used
+        msg_agent = msg.get("agent_type", current_agent)
+        msg_agent_info = AGENTS.get(msg_agent, agent_info)
+        avatar = "👤" if msg["role"] == "user" else msg_agent_info["icon"]
+        
         with st.chat_message(msg["role"], avatar=avatar):
+            # Show agent badge for home page responses (always show which agent)
+            if msg["role"] == "assistant" and current_page == "home":
+                badge_style = "background:linear-gradient(135deg,var(--primary-dim),var(--accent-dim));border:1px solid var(--primary-border);padding:0.4rem 0.8rem;border-radius:20px;font-size:0.75rem;font-weight:600;display:inline-flex;align-items:center;gap:0.4rem;margin-bottom:0.6rem;"
+                agent_label = msg_agent_info["name"] if msg_agent != "orchestrator" else "Direct Response"
+                st.markdown(f'<div style="{badge_style}">{msg_agent_info["icon"]} {agent_label}</div>', unsafe_allow_html=True)
             st.markdown(msg["content"])
             if msg.get("sources"):
-                render_sources(msg["sources"], msg.get("agent_type", current_agent))
+                render_sources(msg["sources"], msg_agent)
+                # Display chart if present in sources
+                if any(s.get("type") == "chart" for s in msg.get("sources", [])):
+                    chart_source = next((s for s in msg["sources"] if s.get("type") == "chart"), None)
+                    if chart_source and chart_source.get("chart"):
+                        st.image(f"data:image/png;base64,{chart_source['chart']}", use_container_width=True)
     
     # Check for pending web search redirect
     if st.session_state.get("redirect_to_web_search"):
         pending_query = st.session_state.pop("redirect_to_web_search")
-        st.session_state["current_agent"] = "web_search"
+        st.session_state["current_page"] = "web"
         st.session_state["pending_query"] = pending_query
         st.rerun()
     
@@ -1140,49 +1796,69 @@ def render_chat():
     pending_query = st.session_state.pop("pending_query", None)
     
     # Chat input
-    placeholder = get_agent_placeholder(current_agent)
-    prompt = pending_query or st.chat_input(placeholder, key="chat_input")
+    placeholder = get_page_placeholder(current_page)
+    prompt = pending_query or st.chat_input(placeholder, key=f"chat_input_{current_page}")
     
     if prompt:
-        # Add user message
-        st.session_state.setdefault("messages", []).append({
+        # Add user message to page-specific history
+        st.session_state[messages_key].append({
             "role": "user", "content": prompt, "agent_type": current_agent
         })
         
         with st.chat_message("user", avatar="👤"):
             st.markdown(prompt)
         
-        # Run appropriate agent
+        # Run appropriate agent based on page
         with st.chat_message("assistant", avatar=agent_info["icon"]):
-            with st.spinner(f"{agent_info['name']} is thinking..."):
+            spinner_text = "Routing to best agent..." if current_page == "home" else f"{agent_info['name']} is thinking..."
+            with st.spinner(spinner_text):
                 out_of_scope = False
                 
-                if current_agent == "orchestrator":
-                    response, agent_used, sources = run_orchestrator(prompt, user)
+                if current_page == "home":  # Multi-agent orchestrator
+                    response, agent_used, sources = run_orchestrator(prompt, user, messages)
                 elif current_agent == "pdf_qa":
-                    response, agent_used, sources, out_of_scope = run_pdf_retriever(prompt, user)
+                    response, agent_used, sources, out_of_scope = run_pdf_retriever(prompt, user, messages)
                 elif current_agent == "web_search":
-                    response, agent_used, sources, out_of_scope = run_web_search(prompt, user)
+                    response, agent_used, sources, out_of_scope = run_web_search(prompt, user, messages)
                 elif current_agent == "blog_qa":
-                    response, agent_used, sources, out_of_scope = run_blog_analyzer(prompt, user)
+                    response, agent_used, sources, out_of_scope = run_blog_analyzer(prompt, user, messages)
                 elif current_agent == "sentiment":
-                    response, agent_used, sources, out_of_scope = run_sentiment_analyzer(prompt, user)
+                    response, agent_used, sources, out_of_scope = run_sentiment_analyzer(prompt, user, messages)
+                elif current_agent == "weather":
+                    response, agent_used, sources, out_of_scope = run_weather_agent(prompt, user, messages)
+                elif current_agent == "image_qa":
+                    response, agent_used, sources, out_of_scope = run_image_analyzer(prompt, user, messages)
+                elif current_agent == "data_analysis":
+                    response, agent_used, sources, out_of_scope = run_data_analyzer(prompt, user, messages)
                 else:
                     response, agent_used, sources = run_orchestrator(prompt, user)
+            
+            # Show agent badge for home page (always show which agent was used)
+            if current_page == "home":
+                used_agent_info = AGENTS.get(agent_used, agent_info)
+                badge_style = "background:linear-gradient(135deg,var(--primary-dim),var(--accent-dim));border:1px solid var(--primary-border);padding:0.4rem 0.8rem;border-radius:20px;font-size:0.75rem;font-weight:600;display:inline-flex;align-items:center;gap:0.4rem;margin-bottom:0.6rem;"
+                agent_label = used_agent_info["name"] if agent_used != "orchestrator" else "Direct Response"
+                st.markdown(f'<div style="{badge_style}">{used_agent_info["icon"]} {agent_label}</div>', unsafe_allow_html=True)
             
             st.markdown(response)
             render_sources(sources, agent_used)
             
-            # Show "Search Web" button if out of scope
-            if out_of_scope and st.session_state.get("tavily_key"):
+            # Display chart if one was generated
+            if sources and any(s.get("type") == "chart" for s in sources):
+                chart_source = next((s for s in sources if s.get("type") == "chart"), None)
+                if chart_source and chart_source.get("chart"):
+                    st.image(f"data:image/png;base64,{chart_source['chart']}", use_container_width=True)
+            
+            # Show "Search Web" button if out of scope (only on dedicated pages)
+            if out_of_scope and st.session_state.get("tavily_key") and current_page != "home":
                 st.markdown("---")
                 col1, col2, col3 = st.columns([1, 2, 1])
                 with col2:
-                    if st.button("🔍 Search the Web Instead", key=f"web_search_{len(messages)}", use_container_width=True, type="primary"):
+                    if st.button("🔍 Search the Web Instead", key=f"web_search_{current_page}_{len(messages)}", use_container_width=True, type="primary"):
                         st.session_state["redirect_to_web_search"] = prompt
                         st.rerun()
         
-        st.session_state["messages"].append({
+        st.session_state[messages_key].append({
             "role": "assistant", "content": response,
             "agent_type": agent_used, "sources": sources,
             "out_of_scope": out_of_scope
@@ -1191,24 +1867,30 @@ def render_chat():
 
 def get_agent_welcome(agent_type):
     welcomes = {
-        "orchestrator": "I'm your intelligent assistant. Ask me anything — I can help with questions, writing, analysis, or guide you to specialized agents.",
-        "pdf_qa": "I analyze your uploaded PDF documents. Upload PDFs in the sidebar, then ask me questions about their content.",
-        "web_search": "I search the web for current information. Ask about news, events, facts, or anything you want to look up online.",
-        "blog_qa": "I analyze blog articles. Add blog URLs in the sidebar, and I'll answer questions about their content.",
-        "sentiment": "I analyze sentiment in text. Paste a review, feedback, or any text, and I'll identify the emotions and sentiment."
+        "orchestrator": "Ask me anything — I'll automatically route to the best specialist agent!",
+        "pdf_qa": "This is your dedicated PDF chat. Upload PDFs in the sidebar, then ask questions about their content.",
+        "web_search": "This is your dedicated web search chat. Ask about news, events, facts, or anything you want to look up online.",
+        "blog_qa": "This is your dedicated blog chat. Add blog URLs in the sidebar, and ask questions about their content.",
+        "sentiment": "This is your dedicated sentiment analysis chat. Paste reviews, feedback, or any text to analyze emotions.",
+        "weather": "This is your dedicated weather chat. Ask about current weather, forecasts, or conditions in any city worldwide.",
+        "image_qa": "This is your dedicated image chat. Upload an image in the sidebar, then ask questions about what you see!",
+        "data_analysis": "This is your dedicated data analysis chat. Upload a CSV file in the sidebar, then ask questions, request statistics, or create visualizations!"
     }
     return welcomes.get(agent_type, welcomes["orchestrator"])
 
 
-def get_agent_placeholder(agent_type):
+def get_page_placeholder(page_id):
     placeholders = {
-        "orchestrator": "Ask me anything...",
-        "pdf_qa": "Ask about your uploaded documents...",
-        "web_search": "Search for current information...",
-        "blog_qa": "Ask about the blog articles...",
-        "sentiment": "Paste text to analyze sentiment..."
+        "home": "Ask anything — I'll route to the best agent...",
+        "pdf": "Ask about your uploaded documents...",
+        "web": "Search for current information...",
+        "blog": "Ask about the blog articles...",
+        "sentiment": "Paste text to analyze sentiment...",
+        "weather": "Ask about weather in any city...",
+        "image": "Ask a question about the uploaded image...",
+        "data": "Ask about your data, request stats or charts..."
     }
-    return placeholders.get(agent_type, placeholders["orchestrator"])
+    return placeholders.get(page_id, placeholders["home"])
 
 
 # ═══════════════════════════════════════════════
