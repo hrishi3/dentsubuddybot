@@ -79,8 +79,28 @@ html, body, .stApp {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
     color: var(--text-100) !important;
 }
-#MainMenu, footer, header { visibility: hidden; }
+#MainMenu, footer { visibility: hidden; }
 .stDeployButton { display: none; }
+
+/* Keep sidebar toggle button visible and styled */
+button[data-testid="stSidebarCollapseButton"],
+button[data-testid="collapsedControl"] {
+    visibility: visible !important;
+    display: flex !important;
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-sm) !important;
+    color: var(--text-200) !important;
+    padding: 0.5rem !important;
+    margin: 0.5rem !important;
+    cursor: pointer !important;
+    z-index: 999 !important;
+}
+button[data-testid="stSidebarCollapseButton"]:hover,
+button[data-testid="collapsedControl"]:hover {
+    background: var(--bg-elevated) !important;
+    border-color: var(--primary-border) !important;
+}
 
 section[data-testid="stSidebar"] {
     background: var(--bg-surface) !important;
