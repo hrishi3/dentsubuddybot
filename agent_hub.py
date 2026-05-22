@@ -802,146 +802,124 @@ def run_with_guardrails(prompt: str, context: str, agent_type: str, system_promp
 # ═══════════════════════════════════════════════
 
 def run_orchestrator(prompt: str, user: dict, chat_history: list = None) -> tuple:
-    """Smart multi-agent orchestrator that autonomously decides which agent/tool to use."""
+    """Smart multi-agent orchestrator that autonomously decides which agent to use."""
     today_str = datetime.now().strftime("%B %d, %Y")
-    
-    # Build chat history for context
-    history_messages = []
-    if chat_history:
-        for msg in chat_history[-6:]:  # Last 6 messages for context
-            if msg["role"] == "user":
-                history_messages.append(HumanMessage(content=msg["content"]))
-            else:
-                history_messages.append(AIMessage(content=msg["content"][:500]))
     
     # Check available resources
     has_pdfs = bool(get_user_documents(user["user_id"]))
     has_blogs = bool(get_user_blogs(user["user_id"]))
     has_tavily = bool(st.session_state.get("tavily_key"))
-    
-    # Build available tools list
-    available_tools = []
-    tool_info = []
-    
-    if has_pdfs:
-        available_tools.append(search_pdf_documents)
-        tool_info.append("- search_pdf_documents: Query uploaded PDF documents (use for any document-related questions)")
-    if has_blogs:
-        available_tools.append(search_blog_articles)
-        tool_info.append("- search_blog_articles: Query added blog articles (use for blog content questions)")
-    if has_tavily:
-        available_tools.append(search_web)
-        tool_info.append("- search_web: Search the internet (use for current events, news, real-time info, anything you don't know)")
-    available_tools.append(analyze_sentiment)
-    tool_info.append("- analyze_sentiment: Analyze emotions/sentiment in text (use when user wants sentiment analysis)")
-    
-    # Add weather tool if API key available
     has_weather = bool(st.session_state.get("weather_key"))
-    if has_weather:
-        available_tools.append(get_weather)
-        tool_info.append("- get_weather: Get current weather and forecast for any city (use for weather questions)")
+    has_image = bool(st.session_state.get("uploaded_image_data"))
+    has_csv = bool(st.session_state.get("uploaded_csv_data"))
     
-    tools_str = "\n".join(tool_info) if tool_info else "No specialized tools available."
+    # Build resource summary for LLM
+    resources = []
+    if has_pdfs:
+        docs = get_user_documents(user["user_id"])
+        doc_names = ", ".join([d["filename"][:20] for d in docs[:3]])
+        resources.append(f"PDF_DOCUMENTS: User has uploaded PDFs: {doc_names}")
+    if has_blogs:
+        resources.append("BLOG_ARTICLES: User has added blog articles")
+    if has_image:
+        img_name = st.session_state.get("uploaded_image_name", "image")
+        resources.append(f"IMAGE: User has uploaded an image: {img_name}")
+    if has_csv:
+        csv_name = st.session_state.get("uploaded_csv_name", "data.csv")
+        resources.append(f"CSV_DATA: User has uploaded data file: {csv_name}")
     
-    # Enhanced system prompt for autonomous routing
-    system_prompt = f"""You are the AI Agent Hub — an intelligent multi-agent orchestrator. Today is {today_str}.
+    resources_str = "\n".join(resources) if resources else "No user resources uploaded."
+    
+    # Build routing prompt
+    routing_prompt = f"""You are a routing system. Analyze the user's question and decide which agent to use.
 
-You AUTOMATICALLY decide which tool to use based on the user's question. You have these specialized tools:
-{tools_str}
+TODAY: {today_str}
 
-## ROUTING RULES (follow strictly):
+USER'S RESOURCES:
+{resources_str}
 
-1. **PDF/Document questions** → use search_pdf_documents
-   - ONLY when user explicitly mentions: "document", "PDF", "uploaded", "file", "my document", "the report"
-   - ONLY if user has uploaded PDFs
-   
-2. **Blog questions** → use search_blog_articles  
-   - ONLY when user explicitly mentions: "blog", "article I added", "the post"
-   - ONLY if user has added blogs
-   
-3. **Sentiment/Emotion analysis** → use analyze_sentiment
-   - ONLY when user explicitly asks for sentiment, emotion, or tone analysis
-   - When user says "analyze this review" or "what's the sentiment"
+AVAILABLE AGENTS:
+- PDF_AGENT: For questions about uploaded PDF documents
+- WEB_AGENT: For web search, current events, news, facts, real-time info
+- BLOG_AGENT: For questions about added blog articles  
+- SENTIMENT_AGENT: For sentiment/emotion analysis of text
+- WEATHER_AGENT: For weather information (requires location)
+- IMAGE_AGENT: For analyzing uploaded images
+- DATA_AGENT: For analyzing CSV data, creating charts
+- DIRECT: For simple greetings or questions you can answer directly
 
-4. **Weather questions** → use get_weather
-   - When user asks about weather, temperature, forecast, climate
-   - "What's the weather in...", "Is it raining in...", "Temperature in..."
-   
-5. **EVERYTHING ELSE** → use search_web (DEFAULT)
-   - General questions, facts, current events, news
-   - "What is...", "Who is...", "How to...", "Tell me about..."
-   - Weather, prices, sports, science, history, tech
-   - ANY question you're not 100% sure about
-   - If in doubt, ALWAYS use search_web
+ROUTING RULES:
+1. If user mentions "document", "PDF", "uploaded", "file", "report" AND has PDFs → PDF_AGENT
+2. If user mentions "blog", "article I added" AND has blogs → BLOG_AGENT
+3. If user asks about "weather", "temperature", "forecast" → WEATHER_AGENT
+4. If user asks to "analyze sentiment", "emotions", "tone" of text → SENTIMENT_AGENT
+5. If user mentions "image", "picture", "photo" AND has image → IMAGE_AGENT
+6. If user mentions "data", "chart", "CSV", "visualization" AND has CSV → DATA_AGENT
+7. For general questions, facts, news, "what is", "who is" → WEB_AGENT
+8. For simple greetings ("hi", "hello") → DIRECT
 
-## IMPORTANT:
-- DEFAULT to search_web for any general or unclear question
-- When using a tool, base your answer on the tool's output
-- Always cite sources when using search_web
-- Use markdown formatting for clarity
-- You have conversation history for follow-up questions"""
+USER QUESTION: {prompt}
+
+Respond with ONLY ONE of: PDF_AGENT, WEB_AGENT, BLOG_AGENT, SENTIMENT_AGENT, WEATHER_AGENT, IMAGE_AGENT, DATA_AGENT, or DIRECT
+Your answer:"""
 
     try:
-        llm = get_llm(max_tokens=2000, temperature=0.5)
+        # Step 1: Determine which agent to route to
+        llm = get_llm(max_tokens=50, temperature=0)
+        route_response = llm.invoke([HumanMessage(content=routing_prompt)])
+        route = route_response.content.strip().upper()
         
-        # If tools available, use LLM with tool binding
-        if available_tools:
-            try:
-                # Use LLM with bind_tools for tool calling
-                llm_with_tools = llm.bind_tools(available_tools)
-                response = llm_with_tools.invoke([
-                    SystemMessage(content=system_prompt),
-                    *history_messages,
+        # Step 2: Execute the appropriate agent function directly (with user context)
+        if "PDF" in route and has_pdfs:
+            response, agent_used, sources, out_of_scope = run_pdf_retriever(prompt, user, chat_history)
+            return response, agent_used, sources
+            
+        elif "BLOG" in route and has_blogs:
+            response, agent_used, sources, out_of_scope = run_blog_analyzer(prompt, user, chat_history)
+            return response, agent_used, sources
+            
+        elif "WEATHER" in route and has_weather:
+            response, agent_used, sources, out_of_scope = run_weather_agent(prompt, user, chat_history)
+            return response, agent_used, sources
+            
+        elif "SENTIMENT" in route:
+            response, agent_used, sources, out_of_scope = run_sentiment_analyzer(prompt, user, chat_history)
+            return response, agent_used, sources
+            
+        elif "IMAGE" in route and has_image:
+            response, agent_used, sources, out_of_scope = run_image_analyzer(prompt, user, chat_history)
+            return response, agent_used, sources
+            
+        elif "DATA" in route and has_csv:
+            response, agent_used, sources, out_of_scope = run_data_analyzer(prompt, user, chat_history)
+            return response, agent_used, sources
+            
+        elif "WEB" in route and has_tavily:
+            response, agent_used, sources, out_of_scope = run_web_search(prompt, user, chat_history)
+            return response, agent_used, sources
+            
+        elif "DIRECT" in route:
+            # Handle simple responses directly
+            llm = get_llm(max_tokens=500, temperature=0.7)
+            response = llm.invoke([
+                SystemMessage(content=f"You are the AI Agent Hub assistant. Today is {today_str}. Respond helpfully and concisely."),
+                HumanMessage(content=prompt)
+            ])
+            return response.content, "orchestrator", []
+            
+        else:
+            # Default: try web search if available, otherwise direct response
+            if has_tavily:
+                response, agent_used, sources, out_of_scope = run_web_search(prompt, user, chat_history)
+                return response, agent_used, sources
+            else:
+                llm = get_llm(max_tokens=1500, temperature=0.5)
+                response = llm.invoke([
+                    SystemMessage(content=f"You are the AI Agent Hub. Today is {today_str}. Answer the user's question to the best of your knowledge."),
                     HumanMessage(content=prompt)
                 ])
+                return response.content, "orchestrator", []
                 
-                # Check if tools were called
-                if hasattr(response, 'tool_calls') and response.tool_calls:
-                    # Execute the first tool call
-                    tool_call = response.tool_calls[0]
-                    tool_name = tool_call.get('name', '')
-                    tool_args = tool_call.get('args', {})
-                    
-                    # Find and execute the tool
-                    for tool in available_tools:
-                        if tool.name == tool_name:
-                            tool_result = tool.invoke(tool_args)
-                            
-                            # Generate final response based on tool output
-                            final_response = llm.invoke([
-                                SystemMessage(content=system_prompt),
-                                HumanMessage(content=f"Tool '{tool_name}' returned:\n{tool_result}\n\nBased on this, answer the user's question: {prompt}")
-                            ])
-                            
-                            # Determine agent type from tool name
-                            if "pdf" in tool_name.lower():
-                                agent_used = "pdf_qa"
-                            elif "web" in tool_name.lower() or "search" in tool_name.lower():
-                                agent_used = "web_search"
-                            elif "blog" in tool_name.lower():
-                                agent_used = "blog_qa"
-                            elif "sentiment" in tool_name.lower():
-                                agent_used = "sentiment"
-                            elif "weather" in tool_name.lower():
-                                agent_used = "weather"
-                            else:
-                                agent_used = "orchestrator"
-                            
-                            return final_response.content, agent_used, [{"auto_routed": True}]
-                    
-                    # Tool not found, return direct response
-                    return response.content, "orchestrator", [{"fallback": True}]
-                else:
-                    # No tool calls, return direct response
-                    return response.content, "orchestrator", []
-            except Exception as agent_error:
-                # Fallback to direct LLM if tool calling fails
-                response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=prompt)])
-                return response.content, "orchestrator", [{"fallback": True}]
-        else:
-            # No tools - direct response
-            response = llm.invoke([SystemMessage(content=system_prompt), HumanMessage(content=prompt)])
-            return response.content, "orchestrator", []
     except Exception as e:
         return f"Error: {str(e)}", "orchestrator", []
 
